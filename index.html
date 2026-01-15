@@ -1235,6 +1235,7 @@
                 <button onclick="changeWeek(1)" aria-label="Next week">›</button>
             </div>
             <button class="btn-today" onclick="goToToday()">Today</button>
+            <button class="btn-today" id="authBtn" style="background: rgba(255,255,255,0.2); color: white;">🔐 Sign In</button>
         </div>
     </header>
 
@@ -1320,7 +1321,14 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
+        // Supabase configuration
+        const SUPABASE_URL = 'https://tcjaegtublrlkyxveloh.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRjamFlZ3R1YmxybGt5eHZlbG9oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNzc4MzMsImV4cCI6MjA4Mzk1MzgzM30.4aNJQZ2REe_njrdVyhefDomnrKQo2zMo-iDJnGhxRXI';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
         // Status configuration
         const STATUS_CONFIG = {
             leave: { icon: '🌴', label: 'Annual Leave', isWork: false },
@@ -1334,7 +1342,171 @@
         };
 
         // Sample data - will be replaced by Supabase
-        const TECHNICIANS = [];
+        let TECHNICIANS = [];
+        let isLoading = true;
+        let currentUser = null;
+
+        // Load data from Supabase
+        async function loadTechnicians() {
+            const { data, error } = await supabase
+                .from('technicians')
+                .select('*')
+                .order('workstream', { ascending: true })
+                .order('name', { ascending: true });
+            
+            if (error) {
+                console.error('Error loading technicians:', error);
+                return [];
+            }
+            return data || [];
+        }
+
+        async function loadScheduleEntries(startDate, endDate) {
+            const { data, error } = await supabase
+                .from('schedule_entries')
+                .select('*')
+                .gte('date', startDate.toISOString().split('T')[0])
+                .lte('date', endDate.toISOString().split('T')[0]);
+            
+            if (error) {
+                console.error('Error loading schedule:', error);
+                return [];
+            }
+            return data || [];
+        }
+
+        // Transform Supabase data to app format
+        function buildScheduleData(technicians, entries) {
+            return technicians.map(tech => {
+                const schedule = {};
+                
+                // Initialize all days
+                for (let i = 0; i < 7; i++) {
+                    schedule[i] = { jobs: [] };
+                }
+                
+                // Group entries by day
+                entries
+                    .filter(e => e.technician_id === tech.id)
+                    .forEach(entry => {
+                        const entryDate = new Date(entry.date);
+                        const dayIndex = Math.floor((entryDate - currentWeekStart) / (1000 * 60 * 60 * 24));
+                        
+                        if (dayIndex >= 0 && dayIndex < 7) {
+                            if (entry.entry_type === 'status') {
+                                schedule[dayIndex] = { 
+                                    status: entry.status_type, 
+                                    text: entry.status_text 
+                                };
+                            } else if (entry.entry_type === 'job') {
+                                if (!schedule[dayIndex].jobs) {
+                                    schedule[dayIndex] = { jobs: [] };
+                                }
+                                schedule[dayIndex].jobs.push({
+                                    q: entry.q_number,
+                                    client: entry.client,
+                                    location: entry.location,
+                                    task: entry.task,
+                                    partner: entry.partner
+                                });
+                            }
+                        }
+                    });
+                
+                return {
+                    id: tech.id,
+                    name: tech.name,
+                    role: tech.role,
+                    postcode: tech.postcode,
+                    workstream: tech.workstream,
+                    lineManager: tech.line_manager,
+                    schedule
+                };
+            });
+        }
+
+        async function loadAllData() {
+            isLoading = true;
+            showLoadingState();
+            
+            const endDate = new Date(currentWeekStart);
+            endDate.setDate(endDate.getDate() + 6);
+            
+            const [technicians, entries] = await Promise.all([
+                loadTechnicians(),
+                loadScheduleEntries(currentWeekStart, endDate)
+            ]);
+            
+            TECHNICIANS = buildScheduleData(technicians, entries);
+            isLoading = false;
+            renderSchedule();
+        }
+
+        function showLoadingState() {
+            const grid = document.getElementById('scheduleGrid');
+            grid.innerHTML = `
+                <div style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-muted);">
+                    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+                    <div>Loading schedule...</div>
+                </div>
+            `;
+        }
+
+        // Auth functions
+        async function checkAuth() {
+            const { data: { session } } = await supabase.auth.getSession();
+            currentUser = session?.user || null;
+            updateAuthUI();
+        }
+
+        async function signIn(email) {
+            const { error } = await supabase.auth.signInWithOtp({
+                email,
+                options: {
+                    emailRedirectTo: window.location.origin + window.location.pathname
+                }
+            });
+            
+            if (error) {
+                alert('Error sending magic link: ' + error.message);
+                return false;
+            }
+            
+            alert('Check your email for the magic link!');
+            return true;
+        }
+
+        async function signOut() {
+            await supabase.auth.signOut();
+            currentUser = null;
+            updateAuthUI();
+        }
+
+        function updateAuthUI() {
+            const authBtn = document.getElementById('authBtn');
+            if (currentUser) {
+                authBtn.innerHTML = `<span style="max-width: 100px; overflow: hidden; text-overflow: ellipsis;">${currentUser.email}</span> ✕`;
+                authBtn.onclick = signOut;
+                authBtn.title = 'Click to sign out';
+            } else {
+                authBtn.innerHTML = '🔐 Sign In';
+                authBtn.onclick = showLoginModal;
+                authBtn.title = 'Sign in to edit';
+            }
+        }
+
+        function showLoginModal() {
+            const email = prompt('Enter your email address to receive a magic link:');
+            if (email) {
+                signIn(email);
+            }
+        }
+
+        // Listen for auth changes
+        supabase.auth.onAuthStateChange((event, session) => {
+            currentUser = session?.user || null;
+            updateAuthUI();
+        });
 
         // State
         let currentWeekStart = new Date(2025, 11, 1); // Dec 1, 2025 is a Monday
@@ -1393,7 +1565,7 @@
         // Navigation
         function changeWeek(delta) {
             currentWeekStart.setDate(currentWeekStart.getDate() + (delta * 7));
-            renderSchedule();
+            loadAllData();
         }
 
         function goToToday() {
@@ -1401,7 +1573,7 @@
             const day = today.getDay();
             currentWeekStart = new Date(today);
             currentWeekStart.setDate(today.getDate() - (day === 0 ? 6 : day - 1));
-            renderSchedule();
+            loadAllData();
         }
 
         function toggleWeekends() {
@@ -1527,10 +1699,12 @@
             });
 
             // Render rows
+            let hasData = false;
             workstreams.forEach(ws => {
                 if (grouped[ws].length === 0) return;
                 if (workstreamFilter !== 'all' && workstreamFilter !== ws) return;
 
+                hasData = true;
                 html += `<div class="workstream-divider"><div class="workstream-header">${ws}</div></div>`;
 
                 grouped[ws].forEach(tech => {
@@ -1555,6 +1729,17 @@
             });
 
             grid.innerHTML = html;
+
+            // Show empty state if no data
+            if (!hasData && !isLoading) {
+                grid.innerHTML += `
+                    <div style="grid-column: 1 / -1; padding: 3rem; text-align: center; color: var(--text-muted);">
+                        <div style="font-size: 2rem; margin-bottom: 0.5rem;">📋</div>
+                        <div style="font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">No technicians found</div>
+                        <div style="font-size: 0.875rem;">Add technicians in Supabase to get started</div>
+                    </div>
+                `;
+            }
         }
 
         // Panel
@@ -1688,9 +1873,10 @@
         });
 
         // Init
-        document.addEventListener('DOMContentLoaded', () => {
+        document.addEventListener('DOMContentLoaded', async () => {
             initDarkMode();
-            renderSchedule();
+            await checkAuth();
+            await loadAllData();
         });
     </script>
 </body>
