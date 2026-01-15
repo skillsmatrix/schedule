@@ -1327,7 +1327,7 @@
         const SUPABASE_URL = 'https://tcjaegtublrlkyxveloh.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRjamFlZ3R1YmxybGt5eHZlbG9oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgzNzc4MzMsImV4cCI6MjA4Mzk1MzgzM30.4aNJQZ2REe_njrdVyhefDomnrKQo2zMo-iDJnGhxRXI';
         
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        let supabaseClient = null;
 
         // Status configuration
         const STATUS_CONFIG = {
@@ -1348,7 +1348,11 @@
 
         // Load data from Supabase
         async function loadTechnicians() {
-            const { data, error } = await supabase
+            if (!supabaseClient) {
+                console.error('Supabase not initialized');
+                return [];
+            }
+            const { data, error } = await supabaseClient
                 .from('technicians')
                 .select('*')
                 .order('workstream', { ascending: true })
@@ -1362,7 +1366,11 @@
         }
 
         async function loadScheduleEntries(startDate, endDate) {
-            const { data, error } = await supabase
+            if (!supabaseClient) {
+                console.error('Supabase not initialized');
+                return [];
+            }
+            const { data, error } = await supabaseClient
                 .from('schedule_entries')
                 .select('*')
                 .gte('date', startDate.toISOString().split('T')[0])
@@ -1454,13 +1462,18 @@
 
         // Auth functions
         async function checkAuth() {
-            const { data: { session } } = await supabase.auth.getSession();
+            if (!supabaseClient) return;
+            const { data: { session } } = await supabaseClient.auth.getSession();
             currentUser = session?.user || null;
             updateAuthUI();
         }
 
         async function signIn(email) {
-            const { error } = await supabase.auth.signInWithOtp({
+            if (!supabaseClient) {
+                alert('Database connection not available');
+                return false;
+            }
+            const { error } = await supabaseClient.auth.signInWithOtp({
                 email,
                 options: {
                     emailRedirectTo: window.location.origin + window.location.pathname
@@ -1477,7 +1490,8 @@
         }
 
         async function signOut() {
-            await supabase.auth.signOut();
+            if (!supabaseClient) return;
+            await supabaseClient.auth.signOut();
             currentUser = null;
             updateAuthUI();
         }
@@ -1501,12 +1515,6 @@
                 signIn(email);
             }
         }
-
-        // Listen for auth changes
-        supabase.auth.onAuthStateChange((event, session) => {
-            currentUser = session?.user || null;
-            updateAuthUI();
-        });
 
         // State
         let currentWeekStart = new Date(2025, 11, 1); // Dec 1, 2025 is a Monday
@@ -1874,6 +1882,24 @@
 
         // Init
         document.addEventListener('DOMContentLoaded', async () => {
+            // Initialize Supabase
+            try {
+                if (window.supabase) {
+                    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                    console.log('Supabase connected');
+                    
+                    // Listen for auth changes
+                    supabaseClient.auth.onAuthStateChange((event, session) => {
+                        currentUser = session?.user || null;
+                        updateAuthUI();
+                    });
+                } else {
+                    console.error('Supabase library not loaded');
+                }
+            } catch (e) {
+                console.error('Error initializing Supabase:', e);
+            }
+            
             initDarkMode();
             await checkAuth();
             await loadAllData();
