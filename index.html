@@ -1604,7 +1604,7 @@
                 const config = STATUS_CONFIG[dayData.status];
                 const workClass = config.isWork ? 'work' : 'non-work';
                 return `
-                    <div class="status-entry ${workClass} status-${dayData.status}" onclick="openPanel(${tech.id}, ${dayIndex})">
+                    <div class="status-entry ${workClass} status-${dayData.status}" onclick="openPanel('${tech.id}', ${dayIndex})">
                         <span class="status-icon">${config.icon}</span>
                         <span>${dayData.text || config.label}</span>
                     </div>
@@ -1618,7 +1618,7 @@
             // 1-2 jobs: Full display
             if (jobs.length <= 2) {
                 return jobs.map(job => `
-                    <div class="job-entry full" onclick="openPanel(${tech.id}, ${dayIndex})">
+                    <div class="job-entry full" onclick="openPanel('${tech.id}', ${dayIndex})">
                         <div class="job-q">${job.q}</div>
                         <div class="job-location">${job.location}</div>
                         <div class="job-task">${job.task}</div>
@@ -1630,7 +1630,7 @@
             // 3-4 jobs: Compact display
             if (jobs.length <= 4) {
                 return jobs.map(job => `
-                    <div class="job-entry compact" onclick="openPanel(${tech.id}, ${dayIndex})">
+                    <div class="job-entry compact" onclick="openPanel('${tech.id}', ${dayIndex})">
                         <div class="job-line">
                             <span class="job-q">${job.q}</span>
                             <span class="job-location">${job.location}</span>
@@ -1644,7 +1644,7 @@
             const visibleJobs = jobs.slice(0, 5);
             const overflow = jobs.length - 5;
             return `
-                <div class="jobs-minimal" onclick="openPanel(${tech.id}, ${dayIndex})">
+                <div class="jobs-minimal" onclick="openPanel('${tech.id}', ${dayIndex})">
                     ${visibleJobs.map(job => `
                         <div class="job-chip">${job.q}</div>
                     `).join('')}
@@ -1723,7 +1723,7 @@
                 grouped[ws].forEach(tech => {
                     html += `<div class="person-row">`;
                     html += `
-                        <div class="person-cell" onclick="openPanel(${tech.id})">
+                        <div class="person-cell" onclick="openPanel('${tech.id}')">
                             <div class="person-name">${tech.name}</div>
                             <div class="person-role">${tech.role}</div>
                             <div class="person-meta">
