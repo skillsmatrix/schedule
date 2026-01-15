@@ -1476,7 +1476,7 @@
             const { error } = await supabaseClient.auth.signInWithOtp({
                 email,
                 options: {
-                    emailRedirectTo: window.location.origin + window.location.pathname
+                    emailRedirectTo: 'https://skillsmatrix.github.io/schedule/'
                 }
             });
             
@@ -1516,8 +1516,13 @@
             }
         }
 
-        // State
-        let currentWeekStart = new Date(2025, 11, 1); // Dec 1, 2025 is a Monday
+        // State - start on current week
+        const today = new Date();
+        const dayOfWeek = today.getDay();
+        let currentWeekStart = new Date(today);
+        currentWeekStart.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+        currentWeekStart.setHours(0, 0, 0, 0);
+        
         let showWeekends = true;
         let darkMode = false;
 
