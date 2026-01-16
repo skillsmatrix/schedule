@@ -1285,6 +1285,12 @@
             </div>
         </div>
         <div class="toolbar-actions">
+            <button class="btn-icon" id="addTechBtn" onclick="showAddTechnicianModal()" title="Add Technician" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19"/>
+                    <line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+            </button>
             <button class="btn-icon" id="toggleDarkMode" onclick="toggleDarkMode()" title="Toggle dark mode">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="darkModeIcon">
                     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
@@ -1338,9 +1344,8 @@
         <div class="panel-body" id="panelBody">
             <!-- Dynamic content -->
         </div>
-        <div class="panel-footer">
-            <button class="panel-btn panel-btn-secondary">Edit</button>
-            <button class="panel-btn panel-btn-primary">View in Z-One</button>
+        <div class="panel-footer" id="panelFooter">
+            <!-- Dynamic buttons -->
         </div>
     </div>
 
@@ -1520,18 +1525,22 @@
 
         function updateAuthUI() {
             const authBtn = document.getElementById('authBtn');
+            const addTechBtn = document.getElementById('addTechBtn');
+            
             if (currentUser) {
                 authBtn.innerHTML = `✓ ${currentUser.email.split('@')[0]}`;
                 authBtn.onclick = signOut;
                 authBtn.title = 'Click to sign out';
                 authBtn.style.background = 'rgba(255,255,255,0.9)';
                 authBtn.style.color = 'var(--brand-primary)';
+                if (addTechBtn) addTechBtn.style.display = 'flex';
             } else {
                 authBtn.innerHTML = '🔐 Sign In';
                 authBtn.onclick = showLoginModal;
                 authBtn.title = 'Sign in to edit';
                 authBtn.style.background = 'rgba(255,255,255,0.2)';
                 authBtn.style.color = 'white';
+                if (addTechBtn) addTechBtn.style.display = 'none';
             }
         }
 
@@ -1656,6 +1665,648 @@
             const overlay = document.getElementById('loginOverlay');
             if (overlay) overlay.remove();
             document.removeEventListener('keydown', handleLoginEscape);
+        }
+
+        // ==================== CRUD FUNCTIONS ====================
+
+        // Add new technician
+        function showAddTechnicianModal() {
+            if (!currentUser) {
+                alert('Please sign in to add technicians');
+                return;
+            }
+            showTechnicianModal(null);
+        }
+
+        // Edit existing technician
+        function showEditTechnicianModal(techId) {
+            if (!currentUser) {
+                alert('Please sign in to edit');
+                return;
+            }
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (tech) showTechnicianModal(tech);
+        }
+
+        function showTechnicianModal(tech = null) {
+            const isEdit = tech !== null;
+            
+            const overlay = document.createElement('div');
+            overlay.id = 'techModalOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                padding: 2rem;
+                width: 90%;
+                max-width: 480px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+                max-height: 90vh;
+                overflow-y: auto;
+            `;
+
+            const workstreamOptions = ['Project Delivery', 'Clean Water Maintenance', 'Waste Water', 'Contingent Resources', 'Management/Admin']
+                .map(ws => `<option value="${ws}" ${tech?.workstream === ws ? 'selected' : ''}>${ws}</option>`)
+                .join('');
+
+            modal.innerHTML = `
+                <h2 style="margin: 0 0 1.5rem 0; font-size: 1.25rem; color: var(--text-primary);">${isEdit ? 'Edit Technician' : 'Add New Technician'}</h2>
+                <form id="techForm">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Name *</label>
+                            <input type="text" id="techName" required value="${tech?.name || ''}" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            " placeholder="John Smith">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Role</label>
+                            <input type="text" id="techRole" value="${tech?.role || ''}" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            " placeholder="Electrician">
+                        </div>
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Postcode</label>
+                            <input type="text" id="techPostcode" value="${tech?.postcode || ''}" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            " placeholder="SW1A">
+                        </div>
+                        <div>
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Line Manager</label>
+                            <input type="text" id="techManager" value="${tech?.lineManager || ''}" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            " placeholder="Manager Name">
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Workstream *</label>
+                        <select id="techWorkstream" required style="
+                            width: 100%;
+                            padding: 0.625rem 0.75rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-family: inherit;
+                            background: var(--bg-secondary);
+                            color: var(--text-primary);
+                            box-sizing: border-box;
+                        ">
+                            <option value="">Select workstream...</option>
+                            ${workstreamOptions}
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 0.75rem;">
+                        ${isEdit ? `<button type="button" onclick="deleteTechnician('${tech.id}')" style="
+                            padding: 0.625rem 1rem;
+                            border: 1px solid #f43f5e;
+                            background: transparent;
+                            color: #f43f5e;
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 500;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">Delete</button>` : ''}
+                        <div style="flex: 1;"></div>
+                        <button type="button" onclick="closeTechModal()" style="
+                            padding: 0.625rem 1rem;
+                            border: 1px solid var(--border-color);
+                            background: var(--bg-secondary);
+                            color: var(--text-primary);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 500;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">Cancel</button>
+                        <button type="submit" style="
+                            padding: 0.625rem 1.25rem;
+                            border: none;
+                            background: var(--brand-gradient);
+                            color: white;
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 600;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">${isEdit ? 'Save Changes' : 'Add Technician'}</button>
+                    </div>
+                </form>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            document.getElementById('techName').focus();
+
+            document.getElementById('techForm').onsubmit = async (e) => {
+                e.preventDefault();
+                await saveTechnician(tech?.id);
+            };
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeTechModal();
+            };
+        }
+
+        function closeTechModal() {
+            const overlay = document.getElementById('techModalOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        async function saveTechnician(techId = null) {
+            const techData = {
+                name: document.getElementById('techName').value,
+                role: document.getElementById('techRole').value,
+                postcode: document.getElementById('techPostcode').value,
+                line_manager: document.getElementById('techManager').value,
+                workstream: document.getElementById('techWorkstream').value
+            };
+
+            let error;
+            if (techId) {
+                // Update existing
+                const result = await supabaseClient
+                    .from('technicians')
+                    .update(techData)
+                    .eq('id', techId);
+                error = result.error;
+            } else {
+                // Insert new
+                const result = await supabaseClient
+                    .from('technicians')
+                    .insert([techData]);
+                error = result.error;
+            }
+
+            if (error) {
+                alert('Error saving technician: ' + error.message);
+                return;
+            }
+
+            closeTechModal();
+            closePanel();
+            await loadAllData();
+        }
+
+        async function deleteTechnician(techId) {
+            if (!confirm('Are you sure you want to delete this technician? This will also delete all their schedule entries.')) {
+                return;
+            }
+
+            const { error } = await supabaseClient
+                .from('technicians')
+                .delete()
+                .eq('id', techId);
+
+            if (error) {
+                alert('Error deleting technician: ' + error.message);
+                return;
+            }
+
+            closeTechModal();
+            closePanel();
+            await loadAllData();
+        }
+
+        // ==================== SCHEDULE ENTRY CRUD ====================
+
+        function showAddEntryModal(techId, dayIndex) {
+            if (!currentUser) {
+                alert('Please sign in to edit the schedule');
+                return;
+            }
+            showEntryModal(techId, dayIndex, null);
+        }
+
+        function showEditEntryModal(techId, dayIndex, entryType = 'job') {
+            if (!currentUser) {
+                alert('Please sign in to edit');
+                return;
+            }
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            const dayData = tech?.schedule[dayIndex];
+            showEntryModal(techId, dayIndex, dayData);
+        }
+
+        function showEntryModal(techId, dayIndex, existingData = null) {
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (!tech) return;
+
+            const date = new Date(currentWeekStart);
+            date.setDate(date.getDate() + dayIndex);
+            const dateStr = date.toISOString().split('T')[0];
+
+            const isEdit = existingData && (existingData.status || (existingData.jobs && existingData.jobs.length > 0));
+            const isStatus = existingData?.status;
+            
+            const overlay = document.createElement('div');
+            overlay.id = 'entryModalOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                padding: 2rem;
+                width: 90%;
+                max-width: 480px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+                max-height: 90vh;
+                overflow-y: auto;
+            `;
+
+            const statusOptions = Object.entries(STATUS_CONFIG)
+                .map(([key, val]) => `<option value="${key}" ${existingData?.status === key ? 'selected' : ''}>${val.icon} ${val.label}</option>`)
+                .join('');
+
+            const clientOptions = ['Thames Water', 'Southern Water', 'United Utilities', 'Severn Trent', 'Anglian Water', 'Scottish Water', 'SEW', 'Internal', 'MWH', 'Other']
+                .map(c => `<option value="${c}">${c}</option>`)
+                .join('');
+
+            modal.innerHTML = `
+                <h2 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; color: var(--text-primary);">${isEdit ? 'Edit Entry' : 'Add Entry'}</h2>
+                <p style="margin: 0 0 1.5rem 0; font-size: 0.875rem; color: var(--text-muted);">${tech.name} - ${formatDate(date).full}</p>
+                
+                <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;">
+                    <button type="button" id="tabJob" onclick="switchEntryTab('job')" style="
+                        flex: 1;
+                        padding: 0.625rem 1rem;
+                        border: 1px solid var(--border-color);
+                        background: ${!isStatus ? 'var(--brand-primary)' : 'var(--bg-secondary)'};
+                        color: ${!isStatus ? 'white' : 'var(--text-primary)'};
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Job</button>
+                    <button type="button" id="tabStatus" onclick="switchEntryTab('status')" style="
+                        flex: 1;
+                        padding: 0.625rem 1rem;
+                        border: 1px solid var(--border-color);
+                        background: ${isStatus ? 'var(--brand-primary)' : 'var(--bg-secondary)'};
+                        color: ${isStatus ? 'white' : 'var(--text-primary)'};
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Status</button>
+                </div>
+
+                <form id="entryForm">
+                    <input type="hidden" id="entryTechId" value="${techId}">
+                    <input type="hidden" id="entryDate" value="${dateStr}">
+                    <input type="hidden" id="entryDayIndex" value="${dayIndex}">
+                    
+                    <div id="jobFields" style="display: ${!isStatus ? 'block' : 'none'};">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                            <div>
+                                <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Q Number</label>
+                                <input type="text" id="entryQNumber" value="${existingData?.jobs?.[0]?.q || ''}" style="
+                                    width: 100%;
+                                    padding: 0.625rem 0.75rem;
+                                    border: 1px solid var(--border-color);
+                                    border-radius: 0.5rem;
+                                    font-size: 0.875rem;
+                                    font-family: inherit;
+                                    background: var(--bg-secondary);
+                                    color: var(--text-primary);
+                                    box-sizing: border-box;
+                                " placeholder="Q12345">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Client</label>
+                                <select id="entryClient" style="
+                                    width: 100%;
+                                    padding: 0.625rem 0.75rem;
+                                    border: 1px solid var(--border-color);
+                                    border-radius: 0.5rem;
+                                    font-size: 0.875rem;
+                                    font-family: inherit;
+                                    background: var(--bg-secondary);
+                                    color: var(--text-primary);
+                                    box-sizing: border-box;
+                                ">
+                                    <option value="">Select...</option>
+                                    ${clientOptions}
+                                </select>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Location</label>
+                            <input type="text" id="entryLocation" value="${existingData?.jobs?.[0]?.location || ''}" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            " placeholder="Site name or address">
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                            <div>
+                                <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Task</label>
+                                <input type="text" id="entryTask" value="${existingData?.jobs?.[0]?.task || ''}" style="
+                                    width: 100%;
+                                    padding: 0.625rem 0.75rem;
+                                    border: 1px solid var(--border-color);
+                                    border-radius: 0.5rem;
+                                    font-size: 0.875rem;
+                                    font-family: inherit;
+                                    background: var(--bg-secondary);
+                                    color: var(--text-primary);
+                                    box-sizing: border-box;
+                                " placeholder="What are they doing?">
+                            </div>
+                            <div>
+                                <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Partner</label>
+                                <input type="text" id="entryPartner" value="${existingData?.jobs?.[0]?.partner || ''}" style="
+                                    width: 100%;
+                                    padding: 0.625rem 0.75rem;
+                                    border: 1px solid var(--border-color);
+                                    border-radius: 0.5rem;
+                                    font-size: 0.875rem;
+                                    font-family: inherit;
+                                    background: var(--bg-secondary);
+                                    color: var(--text-primary);
+                                    box-sizing: border-box;
+                                " placeholder="Working with...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="statusFields" style="display: ${isStatus ? 'block' : 'none'};">
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Status Type</label>
+                            <select id="entryStatusType" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            ">
+                                <option value="">Select status...</option>
+                                ${statusOptions}
+                            </select>
+                        </div>
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Notes (optional)</label>
+                            <input type="text" id="entryStatusText" value="${existingData?.text || ''}" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            " placeholder="Additional details...">
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
+                        ${isEdit ? `<button type="button" onclick="clearDayEntries('${techId}', ${dayIndex})" style="
+                            padding: 0.625rem 1rem;
+                            border: 1px solid #f43f5e;
+                            background: transparent;
+                            color: #f43f5e;
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 500;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">Clear Day</button>` : ''}
+                        <div style="flex: 1;"></div>
+                        <button type="button" onclick="closeEntryModal()" style="
+                            padding: 0.625rem 1rem;
+                            border: 1px solid var(--border-color);
+                            background: var(--bg-secondary);
+                            color: var(--text-primary);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 500;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">Cancel</button>
+                        <button type="submit" style="
+                            padding: 0.625rem 1.25rem;
+                            border: none;
+                            background: var(--brand-gradient);
+                            color: white;
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 600;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">Save</button>
+                    </div>
+                </form>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Set client value if editing
+            if (existingData?.jobs?.[0]?.client) {
+                document.getElementById('entryClient').value = existingData.jobs[0].client;
+            }
+
+            document.getElementById('entryForm').onsubmit = async (e) => {
+                e.preventDefault();
+                await saveEntry();
+            };
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeEntryModal();
+            };
+        }
+
+        function switchEntryTab(tab) {
+            const jobFields = document.getElementById('jobFields');
+            const statusFields = document.getElementById('statusFields');
+            const tabJob = document.getElementById('tabJob');
+            const tabStatus = document.getElementById('tabStatus');
+
+            if (tab === 'job') {
+                jobFields.style.display = 'block';
+                statusFields.style.display = 'none';
+                tabJob.style.background = 'var(--brand-primary)';
+                tabJob.style.color = 'white';
+                tabStatus.style.background = 'var(--bg-secondary)';
+                tabStatus.style.color = 'var(--text-primary)';
+            } else {
+                jobFields.style.display = 'none';
+                statusFields.style.display = 'block';
+                tabStatus.style.background = 'var(--brand-primary)';
+                tabStatus.style.color = 'white';
+                tabJob.style.background = 'var(--bg-secondary)';
+                tabJob.style.color = 'var(--text-primary)';
+            }
+        }
+
+        function closeEntryModal() {
+            const overlay = document.getElementById('entryModalOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        async function saveEntry() {
+            const techId = document.getElementById('entryTechId').value;
+            const dateStr = document.getElementById('entryDate').value;
+            const dayIndex = parseInt(document.getElementById('entryDayIndex').value);
+
+            const isJob = document.getElementById('jobFields').style.display !== 'none';
+
+            // First, clear existing entries for this day
+            await supabaseClient
+                .from('schedule_entries')
+                .delete()
+                .eq('technician_id', techId)
+                .eq('date', dateStr);
+
+            let entryData;
+            if (isJob) {
+                const qNumber = document.getElementById('entryQNumber').value;
+                const client = document.getElementById('entryClient').value;
+                const location = document.getElementById('entryLocation').value;
+                const task = document.getElementById('entryTask').value;
+                const partner = document.getElementById('entryPartner').value;
+
+                if (!qNumber && !location && !task) {
+                    closeEntryModal();
+                    closePanel();
+                    await loadAllData();
+                    return;
+                }
+
+                entryData = {
+                    technician_id: techId,
+                    date: dateStr,
+                    entry_type: 'job',
+                    q_number: qNumber,
+                    client: client,
+                    location: location,
+                    task: task,
+                    partner: partner || null
+                };
+            } else {
+                const statusType = document.getElementById('entryStatusType').value;
+                const statusText = document.getElementById('entryStatusText').value;
+
+                if (!statusType) {
+                    closeEntryModal();
+                    closePanel();
+                    await loadAllData();
+                    return;
+                }
+
+                entryData = {
+                    technician_id: techId,
+                    date: dateStr,
+                    entry_type: 'status',
+                    status_type: statusType,
+                    status_text: statusText || null
+                };
+            }
+
+            const { error } = await supabaseClient
+                .from('schedule_entries')
+                .insert([entryData]);
+
+            if (error) {
+                alert('Error saving entry: ' + error.message);
+                return;
+            }
+
+            closeEntryModal();
+            closePanel();
+            await loadAllData();
+        }
+
+        async function clearDayEntries(techId, dayIndex) {
+            if (!confirm('Clear all entries for this day?')) return;
+
+            const date = new Date(currentWeekStart);
+            date.setDate(date.getDate() + dayIndex);
+            const dateStr = date.toISOString().split('T')[0];
+
+            const { error } = await supabaseClient
+                .from('schedule_entries')
+                .delete()
+                .eq('technician_id', techId)
+                .eq('date', dateStr);
+
+            if (error) {
+                alert('Error clearing entries: ' + error.message);
+                return;
+            }
+
+            closeEntryModal();
+            closePanel();
+            await loadAllData();
         }
 
         // Real-time sync
@@ -1970,6 +2621,7 @@
             const title = document.getElementById('panelTitle');
             const subtitle = document.getElementById('panelSubtitle');
             const body = document.getElementById('panelBody');
+            const footer = document.getElementById('panelFooter');
 
             title.textContent = tech.name;
 
@@ -1979,6 +2631,7 @@
                 subtitle.textContent = formatDate(date).full;
 
                 const dayData = tech.schedule[dayIndex];
+                const hasData = dayData?.status || (dayData?.jobs && dayData.jobs.length > 0);
 
                 if (dayData?.status) {
                     const config = STATUS_CONFIG[dayData.status];
@@ -2006,7 +2659,7 @@
                             </div>
                         </div>
                     `;
-                } else if (dayData?.jobs) {
+                } else if (dayData?.jobs && dayData.jobs.length > 0) {
                     body.innerHTML = `
                         <div class="panel-section">
                             <div class="panel-section-title">Jobs (${dayData.jobs.length})</div>
@@ -2051,8 +2704,20 @@
                     body.innerHTML = `
                         <div class="panel-section">
                             <div class="panel-section-title">No Schedule</div>
-                            <p style="color: var(--slate-500); font-size: 0.875rem;">No jobs or status assigned for this day.</p>
+                            <p style="color: var(--text-muted); font-size: 0.875rem;">No jobs or status assigned for this day.</p>
                         </div>
+                    `;
+                }
+
+                // Footer with edit buttons
+                if (currentUser) {
+                    footer.innerHTML = `
+                        <button class="panel-btn panel-btn-secondary" onclick="showEditEntryModal('${tech.id}', ${dayIndex})">${hasData ? 'Edit Entry' : 'Add Entry'}</button>
+                        <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Edit Technician</button>
+                    `;
+                } else {
+                    footer.innerHTML = `
+                        <button class="panel-btn panel-btn-secondary" onclick="showLoginModal()">Sign in to edit</button>
                     `;
                 }
             } else {
@@ -2074,6 +2739,17 @@
                         </div>
                     </div>
                 `;
+
+                // Footer for technician view
+                if (currentUser) {
+                    footer.innerHTML = `
+                        <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Edit Technician</button>
+                    `;
+                } else {
+                    footer.innerHTML = `
+                        <button class="panel-btn panel-btn-secondary" onclick="showLoginModal()">Sign in to edit</button>
+                    `;
+                }
             }
 
             panel.classList.add('open');
