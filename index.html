@@ -1491,24 +1491,23 @@
             updateAuthUI();
         }
 
-        async function signIn(email) {
+        async function signIn(email, password) {
             if (!supabaseClient) {
                 alert('Database connection not available');
                 return false;
             }
-            const { error } = await supabaseClient.auth.signInWithOtp({
+            const { data, error } = await supabaseClient.auth.signInWithPassword({
                 email,
-                options: {
-                    emailRedirectTo: 'https://skillsmatrix.github.io/schedule/'
-                }
+                password
             });
             
             if (error) {
-                alert('Error sending magic link: ' + error.message);
+                alert('Login failed: ' + error.message);
                 return false;
             }
             
-            alert('Check your email for the magic link!');
+            currentUser = data.user;
+            updateAuthUI();
             return true;
         }
 
@@ -1522,21 +1521,141 @@
         function updateAuthUI() {
             const authBtn = document.getElementById('authBtn');
             if (currentUser) {
-                authBtn.innerHTML = `<span style="max-width: 100px; overflow: hidden; text-overflow: ellipsis;">${currentUser.email}</span> ✕`;
+                authBtn.innerHTML = `✓ ${currentUser.email.split('@')[0]}`;
                 authBtn.onclick = signOut;
                 authBtn.title = 'Click to sign out';
+                authBtn.style.background = 'rgba(255,255,255,0.9)';
+                authBtn.style.color = 'var(--brand-primary)';
             } else {
                 authBtn.innerHTML = '🔐 Sign In';
                 authBtn.onclick = showLoginModal;
                 authBtn.title = 'Sign in to edit';
+                authBtn.style.background = 'rgba(255,255,255,0.2)';
+                authBtn.style.color = 'white';
             }
         }
 
         function showLoginModal() {
-            const email = prompt('Enter your email address to receive a magic link:');
-            if (email) {
-                signIn(email);
-            }
+            // Create modal
+            const overlay = document.createElement('div');
+            overlay.id = 'loginOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                padding: 2rem;
+                width: 90%;
+                max-width: 360px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            `;
+
+            modal.innerHTML = `
+                <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem; color: var(--text-primary);">Sign In</h2>
+                <p style="margin: 0 0 1.5rem 0; font-size: 0.875rem; color: var(--text-muted);">Enter your credentials to edit the schedule</p>
+                <form id="loginForm">
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Email</label>
+                        <input type="email" id="loginEmail" required style="
+                            width: 100%;
+                            padding: 0.625rem 0.75rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-family: inherit;
+                            background: var(--bg-secondary);
+                            color: var(--text-primary);
+                            box-sizing: border-box;
+                        " placeholder="you@example.com">
+                    </div>
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Password</label>
+                        <input type="password" id="loginPassword" required style="
+                            width: 100%;
+                            padding: 0.625rem 0.75rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-family: inherit;
+                            background: var(--bg-secondary);
+                            color: var(--text-primary);
+                            box-sizing: border-box;
+                        " placeholder="••••••••">
+                    </div>
+                    <div style="display: flex; gap: 0.75rem;">
+                        <button type="button" onclick="closeLoginModal()" style="
+                            flex: 1;
+                            padding: 0.625rem 1rem;
+                            border: 1px solid var(--border-color);
+                            background: var(--bg-secondary);
+                            color: var(--text-primary);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 500;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">Cancel</button>
+                        <button type="submit" style="
+                            flex: 1;
+                            padding: 0.625rem 1rem;
+                            border: none;
+                            background: var(--brand-gradient);
+                            color: white;
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-weight: 600;
+                            cursor: pointer;
+                            font-family: inherit;
+                        ">Sign In</button>
+                    </div>
+                </form>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Focus email input
+            document.getElementById('loginEmail').focus();
+
+            // Handle form submit
+            document.getElementById('loginForm').onsubmit = async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('loginEmail').value;
+                const password = document.getElementById('loginPassword').value;
+                
+                const success = await signIn(email, password);
+                if (success) {
+                    closeLoginModal();
+                }
+            };
+
+            // Close on overlay click
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeLoginModal();
+            };
+
+            // Close on Escape
+            document.addEventListener('keydown', handleLoginEscape);
+        }
+
+        function handleLoginEscape(e) {
+            if (e.key === 'Escape') closeLoginModal();
+        }
+
+        function closeLoginModal() {
+            const overlay = document.getElementById('loginOverlay');
+            if (overlay) overlay.remove();
+            document.removeEventListener('keydown', handleLoginEscape);
         }
 
         // Real-time sync
