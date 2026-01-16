@@ -1366,7 +1366,8 @@
             night: { icon: '🌙', label: 'Night Work', isWork: true },
             rest: { icon: '☀️', label: 'Rest Day', isWork: false },
             wfh: { icon: '🏠', label: 'WFH', isWork: true },
-            travel: { icon: '🚗', label: 'Travel', isWork: true }
+            travel: { icon: '🚗', label: 'Travel', isWork: true },
+            bank_holiday: { icon: '🎉', label: 'Bank Holiday', isWork: false }
         };
 
         // Sample data - will be replaced by Supabase
@@ -1444,7 +1445,8 @@
                                     location: entry.location,
                                     task: entry.task,
                                     partner: entry.partner,
-                                    isNight: entry.is_night || false
+                                    isNight: entry.is_night || false,
+                                    jobStatus: entry.job_status || 'live'
                                 });
                             }
                         }
@@ -2128,6 +2130,26 @@
                                 </select>
                             </div>
                         </div>
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Job Status</label>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <label style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0.5rem; border-radius: 0.5rem; cursor: pointer; border: 2px solid ${existingData?.jobs?.[0]?.jobStatus === 'inactive' ? '#ef4444' : 'var(--border-color)'}; background: ${existingData?.jobs?.[0]?.jobStatus === 'inactive' ? 'rgba(239,68,68,0.1)' : 'transparent'};" id="statusInactiveLabel">
+                                    <input type="radio" name="jobStatus" value="inactive" ${existingData?.jobs?.[0]?.jobStatus === 'inactive' ? 'checked' : ''} onchange="updateJobStatusStyle()" style="display: none;">
+                                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #ef4444;"></span>
+                                    <span style="font-size: 0.75rem; font-weight: 500;">Inactive</span>
+                                </label>
+                                <label style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0.5rem; border-radius: 0.5rem; cursor: pointer; border: 2px solid ${existingData?.jobs?.[0]?.jobStatus === 'pending' ? '#f59e0b' : 'var(--border-color)'}; background: ${existingData?.jobs?.[0]?.jobStatus === 'pending' ? 'rgba(245,158,11,0.1)' : 'transparent'};" id="statusPendingLabel">
+                                    <input type="radio" name="jobStatus" value="pending" ${existingData?.jobs?.[0]?.jobStatus === 'pending' ? 'checked' : ''} onchange="updateJobStatusStyle()" style="display: none;">
+                                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #f59e0b;"></span>
+                                    <span style="font-size: 0.75rem; font-weight: 500;">Pending</span>
+                                </label>
+                                <label style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.375rem; padding: 0.5rem; border-radius: 0.5rem; cursor: pointer; border: 2px solid ${(existingData?.jobs?.[0]?.jobStatus === 'live' || !existingData?.jobs?.[0]?.jobStatus) ? '#22c55e' : 'var(--border-color)'}; background: ${(existingData?.jobs?.[0]?.jobStatus === 'live' || !existingData?.jobs?.[0]?.jobStatus) ? 'rgba(34,197,94,0.1)' : 'transparent'};" id="statusLiveLabel">
+                                    <input type="radio" name="jobStatus" value="live" ${(existingData?.jobs?.[0]?.jobStatus === 'live' || !existingData?.jobs?.[0]?.jobStatus) ? 'checked' : ''} onchange="updateJobStatusStyle()" style="display: none;">
+                                    <span style="width: 10px; height: 10px; border-radius: 50%; background: #22c55e;"></span>
+                                    <span style="font-size: 0.75rem; font-weight: 500;">Live</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
 
                     <div id="statusFields" style="display: ${isStatus ? 'block' : 'none'};">
@@ -2252,6 +2274,24 @@
             }
         }
 
+        function updateJobStatusStyle() {
+            const statuses = ['inactive', 'pending', 'live'];
+            const colors = { inactive: '#ef4444', pending: '#f59e0b', live: '#22c55e' };
+            
+            statuses.forEach(status => {
+                const label = document.getElementById(`status${status.charAt(0).toUpperCase() + status.slice(1)}Label`);
+                const radio = document.querySelector(`input[name="jobStatus"][value="${status}"]`);
+                
+                if (radio.checked) {
+                    label.style.borderColor = colors[status];
+                    label.style.background = `rgba(${status === 'inactive' ? '239,68,68' : status === 'pending' ? '245,158,11' : '34,197,94'},0.1)`;
+                } else {
+                    label.style.borderColor = 'var(--border-color)';
+                    label.style.background = 'transparent';
+                }
+            });
+        }
+
         function toggleOtherClient() {
             const clientSelect = document.getElementById('entryClient');
             const otherField = document.getElementById('otherClientField');
@@ -2315,6 +2355,7 @@
                 const task = document.getElementById('entryTask').value;
                 const partner = document.getElementById('entryPartner').value;
                 const isNight = document.getElementById('entryIsNight').checked;
+                const jobStatus = document.querySelector('input[name="jobStatus"]:checked')?.value || 'live';
 
                 if (!qNumber && !location && !task) {
                     closeEntryModal();
@@ -2332,7 +2373,8 @@
                     location: location,
                     task: task,
                     partner: partner || null,
-                    is_night: isNight
+                    is_night: isNight,
+                    job_status: jobStatus
                 };
             } else {
                 const statusType = document.getElementById('entryStatusType').value;
@@ -2389,6 +2431,388 @@
             closeEntryModal();
             closePanel();
             await loadAllData();
+        }
+
+        // ==================== BULK ENTRY ====================
+
+        let bulkEntryState = {
+            dayIndex: null,
+            dateStr: null,
+            statusType: null,
+            statusText: null,
+            workstream: 'all',
+            techsToProcess: [],
+            currentTechIndex: 0
+        };
+
+        function showBulkEntryModal(dayIndex) {
+            if (!currentUser) return;
+
+            const date = new Date(currentWeekStart);
+            date.setDate(date.getDate() + dayIndex);
+            const dateStr = date.toISOString().split('T')[0];
+
+            bulkEntryState.dayIndex = dayIndex;
+            bulkEntryState.dateStr = dateStr;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'bulkEntryOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                padding: 2rem;
+                width: 90%;
+                max-width: 400px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            `;
+
+            const workstreamOptions = ['all', 'Project Delivery', 'Clean Water Maintenance', 'Waste Water', 'Contingent Resources', 'Management/Admin']
+                .map(ws => `<option value="${ws}">${ws === 'all' ? 'All Workstreams' : ws}</option>`)
+                .join('');
+
+            const bulkStatusOptions = [
+                { value: 'leave', label: '🌴 Annual Leave' },
+                { value: 'training', label: '📚 Training' },
+                { value: 'office', label: '🏢 Office' },
+                { value: 'sickness', label: '🏥 Sickness' },
+                { value: 'wfh', label: '🏠 WFH' },
+                { value: 'rest', label: '☀️ Rest Day' },
+                { value: 'bank_holiday', label: '🎉 Bank Holiday' }
+            ].map(s => `<option value="${s.value}">${s.label}</option>`).join('');
+
+            modal.innerHTML = `
+                <h2 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; color: var(--text-primary);">Bulk Add Status</h2>
+                <p style="margin: 0 0 1.5rem 0; font-size: 0.875rem; color: var(--text-muted);">${formatDate(date).full}</p>
+                
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Workstream</label>
+                    <select id="bulkWorkstream" style="
+                        width: 100%;
+                        padding: 0.625rem 0.75rem;
+                        border: 1px solid var(--border-color);
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-family: inherit;
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                        box-sizing: border-box;
+                    ">
+                        ${workstreamOptions}
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Status</label>
+                    <select id="bulkStatusType" style="
+                        width: 100%;
+                        padding: 0.625rem 0.75rem;
+                        border: 1px solid var(--border-color);
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-family: inherit;
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                        box-sizing: border-box;
+                    ">
+                        <option value="">Select status...</option>
+                        ${bulkStatusOptions}
+                    </select>
+                </div>
+
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Notes (optional)</label>
+                    <input type="text" id="bulkStatusText" style="
+                        width: 100%;
+                        padding: 0.625rem 0.75rem;
+                        border: 1px solid var(--border-color);
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-family: inherit;
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                        box-sizing: border-box;
+                    " placeholder="e.g. Christmas Day">
+                </div>
+
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" onclick="closeBulkEntryModal()" style="
+                        flex: 1;
+                        padding: 0.625rem 1rem;
+                        border: 1px solid var(--border-color);
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Cancel</button>
+                    <button type="button" onclick="startBulkEntry()" style="
+                        flex: 1;
+                        padding: 0.625rem 1rem;
+                        border: none;
+                        background: var(--brand-gradient);
+                        color: white;
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Apply</button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeBulkEntryModal();
+            };
+        }
+
+        function closeBulkEntryModal() {
+            const overlay = document.getElementById('bulkEntryOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        async function startBulkEntry() {
+            const statusType = document.getElementById('bulkStatusType').value;
+            if (!statusType) {
+                alert('Please select a status');
+                return;
+            }
+
+            bulkEntryState.statusType = statusType;
+            bulkEntryState.statusText = document.getElementById('bulkStatusText').value;
+            bulkEntryState.workstream = document.getElementById('bulkWorkstream').value;
+
+            // Get technicians to process
+            let techs = TECHNICIANS;
+            if (bulkEntryState.workstream !== 'all') {
+                techs = techs.filter(t => t.workstream === bulkEntryState.workstream);
+            }
+
+            bulkEntryState.techsToProcess = techs;
+            bulkEntryState.currentTechIndex = 0;
+
+            closeBulkEntryModal();
+            await processNextBulkEntry();
+        }
+
+        async function processNextBulkEntry() {
+            if (bulkEntryState.currentTechIndex >= bulkEntryState.techsToProcess.length) {
+                // All done
+                await loadAllData();
+                return;
+            }
+
+            const tech = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
+            const dayData = tech.schedule[bulkEntryState.dayIndex];
+            const hasExistingData = dayData?.status || (dayData?.jobs && dayData.jobs.length > 0);
+
+            if (hasExistingData) {
+                // Show conflict modal
+                showConflictModal(tech, dayData);
+            } else {
+                // No conflict, just add
+                await addBulkEntryForTech(tech.id);
+                bulkEntryState.currentTechIndex++;
+                await processNextBulkEntry();
+            }
+        }
+
+        function showConflictModal(tech, dayData) {
+            const overlay = document.createElement('div');
+            overlay.id = 'conflictOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 210;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                padding: 2rem;
+                width: 90%;
+                max-width: 400px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            `;
+
+            // Describe existing entry
+            let existingDesc = '';
+            if (dayData.status) {
+                const config = STATUS_CONFIG[dayData.status];
+                existingDesc = `<div style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 0.5rem; margin-bottom: 1rem;">
+                    <span style="font-size: 1.25rem;">${config?.icon || '📋'}</span>
+                    <span style="margin-left: 0.5rem;">${dayData.text || config?.label || dayData.status}</span>
+                </div>`;
+            } else if (dayData.jobs && dayData.jobs.length > 0) {
+                existingDesc = `<div style="padding: 0.75rem; background: var(--bg-tertiary); border-radius: 0.5rem; margin-bottom: 1rem;">
+                    <strong>${dayData.jobs.length} job(s):</strong><br>
+                    ${dayData.jobs.map(j => `• ${j.q} - ${j.location}`).join('<br>')}
+                </div>`;
+            }
+
+            const remaining = bulkEntryState.techsToProcess.length - bulkEntryState.currentTechIndex - 1;
+
+            modal.innerHTML = `
+                <h2 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; color: var(--text-primary);">Conflict Found</h2>
+                <p style="margin: 0 0 1rem 0; font-size: 0.875rem; color: var(--text-muted);">${tech.name} already has an entry</p>
+                
+                ${existingDesc}
+                
+                <p style="font-size: 0.8125rem; color: var(--text-muted); margin-bottom: 1rem;">${remaining} more technician${remaining !== 1 ? 's' : ''} remaining</p>
+
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button type="button" onclick="handleConflict('replace')" style="
+                        flex: 1;
+                        min-width: 100px;
+                        padding: 0.625rem 0.75rem;
+                        border: 1px solid #f59e0b;
+                        background: rgba(245,158,11,0.1);
+                        color: #f59e0b;
+                        border-radius: 0.5rem;
+                        font-size: 0.8125rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Replace</button>
+                    <button type="button" onclick="handleConflict('skip')" style="
+                        flex: 1;
+                        min-width: 100px;
+                        padding: 0.625rem 0.75rem;
+                        border: 1px solid var(--border-color);
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                        border-radius: 0.5rem;
+                        font-size: 0.8125rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Skip</button>
+                    <button type="button" onclick="handleConflict('replaceAll')" style="
+                        flex: 1;
+                        min-width: 100px;
+                        padding: 0.625rem 0.75rem;
+                        border: none;
+                        background: #f59e0b;
+                        color: white;
+                        border-radius: 0.5rem;
+                        font-size: 0.8125rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Replace All</button>
+                    <button type="button" onclick="handleConflict('skipAll')" style="
+                        flex: 1;
+                        min-width: 100px;
+                        padding: 0.625rem 0.75rem;
+                        border: 1px solid var(--border-color);
+                        background: var(--bg-tertiary);
+                        color: var(--text-secondary);
+                        border-radius: 0.5rem;
+                        font-size: 0.8125rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Skip All</button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+        }
+
+        function closeConflictModal() {
+            const overlay = document.getElementById('conflictOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        async function handleConflict(action) {
+            closeConflictModal();
+
+            const tech = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
+
+            if (action === 'replace') {
+                await deleteTechDayEntries(tech.id);
+                await addBulkEntryForTech(tech.id);
+                bulkEntryState.currentTechIndex++;
+                await processNextBulkEntry();
+            } else if (action === 'skip') {
+                bulkEntryState.currentTechIndex++;
+                await processNextBulkEntry();
+            } else if (action === 'replaceAll') {
+                // Replace this one and all remaining conflicts
+                await deleteTechDayEntries(tech.id);
+                await addBulkEntryForTech(tech.id);
+                bulkEntryState.currentTechIndex++;
+                
+                // Process remaining with auto-replace
+                while (bulkEntryState.currentTechIndex < bulkEntryState.techsToProcess.length) {
+                    const t = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
+                    await deleteTechDayEntries(t.id);
+                    await addBulkEntryForTech(t.id);
+                    bulkEntryState.currentTechIndex++;
+                }
+                await loadAllData();
+            } else if (action === 'skipAll') {
+                // Skip this one and all remaining conflicts
+                bulkEntryState.currentTechIndex++;
+                
+                // Process remaining, skipping any with existing data
+                while (bulkEntryState.currentTechIndex < bulkEntryState.techsToProcess.length) {
+                    const t = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
+                    const dayData = t.schedule[bulkEntryState.dayIndex];
+                    const hasData = dayData?.status || (dayData?.jobs && dayData.jobs.length > 0);
+                    
+                    if (!hasData) {
+                        await addBulkEntryForTech(t.id);
+                    }
+                    bulkEntryState.currentTechIndex++;
+                }
+                await loadAllData();
+            }
+        }
+
+        async function deleteTechDayEntries(techId) {
+            await supabaseClient
+                .from('schedule_entries')
+                .delete()
+                .eq('technician_id', techId)
+                .eq('date', bulkEntryState.dateStr);
+        }
+
+        async function addBulkEntryForTech(techId) {
+            const entryData = {
+                technician_id: techId,
+                date: bulkEntryState.dateStr,
+                entry_type: 'status',
+                status_type: bulkEntryState.statusType,
+                status_text: bulkEntryState.statusText || null
+            };
+
+            await supabaseClient
+                .from('schedule_entries')
+                .insert([entryData]);
         }
 
         // Real-time sync
@@ -2553,29 +2977,47 @@
             const jobs = dayData.jobs || [];
             if (jobs.length === 0) return '';
 
+            // Job status colors
+            const getJobStatusColor = (status) => {
+                switch(status) {
+                    case 'inactive': return '#ef4444';
+                    case 'pending': return '#f59e0b';
+                    case 'live': 
+                    default: return '#22c55e';
+                }
+            };
+
             // 1-2 jobs: Full display
             if (jobs.length <= 2) {
-                return jobs.map(job => `
-                    <div class="job-entry full ${job.isNight ? 'night-job' : ''}" onclick="openPanel('${tech.id}', ${dayIndex})" style="${job.isNight ? 'background: #312e81; border-left-color: #6366f1;' : ''}">
-                        <div class="job-q" style="${job.isNight ? 'color: #a5b4fc;' : ''}">${job.isNight ? '🌙 ' : ''}${job.q}</div>
+                return jobs.map(job => {
+                    const statusColor = getJobStatusColor(job.jobStatus);
+                    const nightBg = job.isNight ? 'background: #312e81;' : '';
+                    const borderColor = job.isNight ? '#6366f1' : statusColor;
+                    return `
+                    <div class="job-entry full ${job.isNight ? 'night-job' : ''}" onclick="openPanel('${tech.id}', ${dayIndex})" style="${nightBg} border-left-color: ${borderColor};">
+                        <div class="job-q" style="${job.isNight ? 'color: #a5b4fc;' : ''}">${job.isNight ? '🌙 ' : ''}<span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: ${statusColor}; margin-right: 4px;"></span>${job.q}</div>
                         <div class="job-location" style="${job.isNight ? 'color: #c7d2fe;' : ''}">${job.location}</div>
                         <div class="job-task" style="${job.isNight ? 'color: #a5b4fc;' : ''}">${job.task}</div>
                         ${job.partner ? `<div class="job-partner" style="${job.isNight ? 'color: #818cf8;' : ''}">${job.partner}</div>` : ''}
                     </div>
-                `).join('');
+                `}).join('');
             }
 
             // 3-4 jobs: Compact display
             if (jobs.length <= 4) {
-                return jobs.map(job => `
-                    <div class="job-entry compact ${job.isNight ? 'night-job' : ''}" onclick="openPanel('${tech.id}', ${dayIndex})" style="${job.isNight ? 'background: #312e81; border-left-color: #6366f1;' : ''}">
+                return jobs.map(job => {
+                    const statusColor = getJobStatusColor(job.jobStatus);
+                    const nightBg = job.isNight ? 'background: #312e81;' : '';
+                    const borderColor = job.isNight ? '#6366f1' : statusColor;
+                    return `
+                    <div class="job-entry compact ${job.isNight ? 'night-job' : ''}" onclick="openPanel('${tech.id}', ${dayIndex})" style="${nightBg} border-left-color: ${borderColor};">
                         <div class="job-line">
-                            <span class="job-q" style="${job.isNight ? 'color: #a5b4fc;' : ''}">${job.isNight ? '🌙 ' : ''}${job.q}</span>
+                            <span class="job-q" style="${job.isNight ? 'color: #a5b4fc;' : ''}">${job.isNight ? '🌙 ' : ''}<span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: ${statusColor}; margin-right: 3px;"></span>${job.q}</span>
                             <span class="job-location" style="${job.isNight ? 'color: #c7d2fe;' : ''}">${job.location}</span>
                         </div>
                         <div class="job-task" style="${job.isNight ? 'color: #a5b4fc;' : ''}">${job.task}</div>
                     </div>
-                `).join('');
+                `}).join('');
             }
 
             // 5+ jobs: Chip display
@@ -2583,9 +3025,11 @@
             const overflow = jobs.length - 5;
             return `
                 <div class="jobs-minimal" onclick="openPanel('${tech.id}', ${dayIndex})">
-                    ${visibleJobs.map(job => `
-                        <div class="job-chip" style="${job.isNight ? 'background: #312e81; color: #a5b4fc;' : ''}">${job.isNight ? '🌙' : ''}${job.q}</div>
-                    `).join('')}
+                    ${visibleJobs.map(job => {
+                        const statusColor = getJobStatusColor(job.jobStatus);
+                        return `
+                        <div class="job-chip" style="${job.isNight ? 'background: #312e81; color: #a5b4fc;' : ''} border-left: 3px solid ${statusColor};">${job.isNight ? '🌙' : ''}${job.q}</div>
+                    `}).join('')}
                     ${overflow > 0 ? `<div class="job-chip jobs-overflow">+${overflow}</div>` : ''}
                 </div>
             `;
@@ -2616,8 +3060,10 @@
                 const f = formatDate(date);
                 const todayClass = isToday(date) ? ' today' : '';
                 const weekendClass = (i >= 5) ? ' weekend' : '';
+                const clickHandler = currentUser ? `onclick="showBulkEntryModal(${i})"` : '';
+                const cursorStyle = currentUser ? 'cursor: pointer;' : '';
                 html += `
-                    <div class="grid-header-cell${todayClass}${weekendClass}">
+                    <div class="grid-header-cell${todayClass}${weekendClass}" ${clickHandler} style="${cursorStyle}" title="${currentUser ? 'Click to add bulk status' : ''}">
                         <div class="day-name">${f.dayName}</div>
                         <div class="day-date">${f.dayNum}</div>
                         <div class="day-month">${f.month}</div>
