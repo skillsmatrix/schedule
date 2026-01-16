@@ -2590,7 +2590,7 @@
 
                     for (let i = 0; i < numDays; i++) {
                         const weekendClass = (i >= 5) ? ' weekend' : '';
-                        html += `<div class="day-cell${weekendClass}">${renderDayCell(tech.schedule[i], tech, i)}</div>`;
+                        html += `<div class="day-cell${weekendClass}" onclick="openPanel('${tech.id}', ${i})">${renderDayCell(tech.schedule[i], tech, i)}</div>`;
                     }
 
                     html += '</div>';
