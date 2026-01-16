@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Water Business Unit Schedule</title>
+    <link rel="icon" type="image/x-icon" href="https://mgroupltd.com/favicon.ico">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -1285,6 +1286,13 @@
             </div>
         </div>
         <div class="toolbar-actions">
+            <button class="btn-icon" id="csvUploadBtn" onclick="showCSVModal()" title="Upload CSV" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="17,8 12,3 7,8"/>
+                    <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+            </button>
             <button class="btn-icon" id="addTechBtn" onclick="showAddTechnicianModal()" title="Add Technician" style="display: none;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="12" y1="5" x2="12" y2="19"/>
@@ -1309,16 +1317,12 @@
 
     <!-- Legend -->
     <div class="legend">
-        <span class="legend-label">Status</span>
+        <span class="legend-label">Job Status</span>
         <div class="legend-items">
             <div class="legend-item"><div class="legend-dot" style="background: #6366f1"></div>Night</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #f59e0b"></div>Rest</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #0ea5e9"></div>Office</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #8b5cf6"></div>Training</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #10b981"></div>Leave</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #f43f5e"></div>Sickness</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #14b8a6"></div>WFH</div>
-            <div class="legend-item"><div class="legend-dot" style="background: #ec4899"></div>Travel</div>
+            <div class="legend-item"><div class="legend-dot" style="background: #ef4444"></div>Inactive</div>
+            <div class="legend-item"><div class="legend-dot" style="background: #f59e0b"></div>Pending</div>
+            <div class="legend-item"><div class="legend-dot" style="background: #22c55e"></div>Live</div>
         </div>
     </div>
 
@@ -1529,6 +1533,7 @@
         function updateAuthUI() {
             const authBtn = document.getElementById('authBtn');
             const addTechBtn = document.getElementById('addTechBtn');
+            const csvUploadBtn = document.getElementById('csvUploadBtn');
             
             if (currentUser) {
                 authBtn.innerHTML = `✓ ${currentUser.email.split('@')[0]}`;
@@ -1537,6 +1542,7 @@
                 authBtn.style.background = 'rgba(255,255,255,0.9)';
                 authBtn.style.color = 'var(--brand-primary)';
                 if (addTechBtn) addTechBtn.style.display = 'flex';
+                if (csvUploadBtn) csvUploadBtn.style.display = 'flex';
             } else {
                 authBtn.innerHTML = '🔐 Sign In';
                 authBtn.onclick = showLoginModal;
@@ -1544,6 +1550,7 @@
                 authBtn.style.background = 'rgba(255,255,255,0.2)';
                 authBtn.style.color = 'white';
                 if (addTechBtn) addTechBtn.style.display = 'none';
+                if (csvUploadBtn) csvUploadBtn.style.display = 'none';
             }
         }
 
@@ -2815,6 +2822,402 @@
                 .insert([entryData]);
         }
 
+        // ==================== COPY PREVIOUS ====================
+
+        function findPreviousEntry(techId, currentDayIndex) {
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (!tech) return null;
+
+            // First check days before in current week
+            for (let i = currentDayIndex - 1; i >= 0; i--) {
+                const dayData = tech.schedule[i];
+                if (dayData?.jobs?.length > 0) {
+                    return { type: 'job', data: dayData.jobs[0] };
+                }
+                if (dayData?.status) {
+                    return { type: 'status', data: { status: dayData.status, text: dayData.text } };
+                }
+            }
+
+            // Check if there's any entry in the week after current day
+            for (let i = currentDayIndex + 1; i < 7; i++) {
+                const dayData = tech.schedule[i];
+                if (dayData?.jobs?.length > 0) {
+                    return { type: 'job', data: dayData.jobs[0] };
+                }
+                if (dayData?.status) {
+                    return { type: 'status', data: { status: dayData.status, text: dayData.text } };
+                }
+            }
+
+            return null;
+        }
+
+        async function copyPreviousEntry(techId, dayIndex) {
+            const previous = findPreviousEntry(techId, dayIndex);
+            if (!previous) {
+                alert('No previous entry found to copy');
+                return;
+            }
+
+            const date = new Date(currentWeekStart);
+            date.setDate(date.getDate() + dayIndex);
+            const dateStr = date.toISOString().split('T')[0];
+
+            let entryData;
+            if (previous.type === 'job') {
+                entryData = {
+                    technician_id: techId,
+                    date: dateStr,
+                    entry_type: 'job',
+                    q_number: previous.data.q,
+                    client: previous.data.client,
+                    location: previous.data.location,
+                    task: previous.data.task,
+                    partner: previous.data.partner || null,
+                    is_night: previous.data.isNight || false,
+                    job_status: previous.data.jobStatus || 'live'
+                };
+            } else {
+                entryData = {
+                    technician_id: techId,
+                    date: dateStr,
+                    entry_type: 'status',
+                    status_type: previous.data.status,
+                    status_text: previous.data.text || null
+                };
+            }
+
+            const { error } = await supabaseClient
+                .from('schedule_entries')
+                .insert([entryData]);
+
+            if (error) {
+                alert('Error copying entry: ' + error.message);
+                return;
+            }
+
+            closePanel();
+            await loadAllData();
+        }
+
+        // ==================== CSV UPLOAD ====================
+
+        function showCSVModal() {
+            if (!currentUser) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'csvModalOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                padding: 2rem;
+                width: 90%;
+                max-width: 500px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            `;
+
+            modal.innerHTML = `
+                <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem; color: var(--text-primary);">CSV Upload</h2>
+                <p style="margin: 0 0 1.5rem 0; font-size: 0.875rem; color: var(--text-muted);">Bulk upload technicians or schedule entries</p>
+                
+                <div style="display: grid; gap: 1rem; margin-bottom: 1.5rem;">
+                    <div style="padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 0.75rem; background: var(--bg-tertiary);">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--text-primary);">📋 Technicians</h3>
+                        <p style="margin: 0 0 1rem 0; font-size: 0.8125rem; color: var(--text-muted);">Upload names, roles, postcodes, managers, workstreams</p>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button onclick="downloadTechTemplate()" style="
+                                flex: 1;
+                                padding: 0.5rem;
+                                border: 1px solid var(--border-color);
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                border-radius: 0.5rem;
+                                font-size: 0.75rem;
+                                cursor: pointer;
+                                font-family: inherit;
+                            ">⬇️ Template</button>
+                            <label style="
+                                flex: 1;
+                                padding: 0.5rem;
+                                border: none;
+                                background: var(--brand-gradient);
+                                color: white;
+                                border-radius: 0.5rem;
+                                font-size: 0.75rem;
+                                cursor: pointer;
+                                font-family: inherit;
+                                text-align: center;
+                                font-weight: 500;
+                            ">
+                                ⬆️ Upload
+                                <input type="file" accept=".csv" onchange="uploadTechCSV(this)" style="display: none;">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div style="padding: 1.25rem; border: 1px solid var(--border-color); border-radius: 0.75rem; background: var(--bg-tertiary);">
+                        <h3 style="margin: 0 0 0.5rem 0; font-size: 1rem; color: var(--text-primary);">📅 Schedule Entries</h3>
+                        <p style="margin: 0 0 1rem 0; font-size: 0.8125rem; color: var(--text-muted);">Upload jobs with dates, locations, tasks, partners</p>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button onclick="downloadScheduleTemplate()" style="
+                                flex: 1;
+                                padding: 0.5rem;
+                                border: 1px solid var(--border-color);
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                border-radius: 0.5rem;
+                                font-size: 0.75rem;
+                                cursor: pointer;
+                                font-family: inherit;
+                            ">⬇️ Template</button>
+                            <label style="
+                                flex: 1;
+                                padding: 0.5rem;
+                                border: none;
+                                background: var(--brand-gradient);
+                                color: white;
+                                border-radius: 0.5rem;
+                                font-size: 0.75rem;
+                                cursor: pointer;
+                                font-family: inherit;
+                                text-align: center;
+                                font-weight: 500;
+                            ">
+                                ⬆️ Upload
+                                <input type="file" accept=".csv" onchange="uploadScheduleCSV(this)" style="display: none;">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <button onclick="closeCSVModal()" style="
+                    width: 100%;
+                    padding: 0.625rem 1rem;
+                    border: 1px solid var(--border-color);
+                    background: var(--bg-secondary);
+                    color: var(--text-primary);
+                    border-radius: 0.5rem;
+                    font-size: 0.875rem;
+                    font-weight: 500;
+                    cursor: pointer;
+                    font-family: inherit;
+                ">Close</button>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeCSVModal();
+            };
+        }
+
+        function closeCSVModal() {
+            const overlay = document.getElementById('csvModalOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        function downloadTechTemplate() {
+            const csv = 'Name,Role,Postcode,Line Manager,Workstream\nJohn Smith,Electrician,SW1A,Jane Doe,Project Delivery\nJane Doe,Operations Manager,E14,,Management/Admin';
+            downloadCSV(csv, 'technicians_template.csv');
+        }
+
+        function downloadScheduleTemplate() {
+            // Get dates for current week
+            const dates = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(currentWeekStart);
+                d.setDate(d.getDate() + i);
+                dates.push(d.toISOString().split('T')[0]);
+            }
+            
+            const header = 'Name,Q Number,Client,Location,Task,Partner,Job Status,Night Work,' + dates.join(',');
+            const example1 = 'John Smith,Q12345,Thames Water,Beckton STW,Panel Install,,live,no,yes,yes,no,no,no,no,no';
+            const example2 = 'Jane Doe,Q12346,Southern Water,Testwood,Pump Service,John Smith,pending,no,no,yes,yes,yes,no,no,no';
+            
+            const csv = header + '\n' + example1 + '\n' + example2;
+            downloadCSV(csv, 'schedule_template.csv');
+        }
+
+        function downloadCSV(content, filename) {
+            const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = filename;
+            link.click();
+        }
+
+        async function uploadTechCSV(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const text = await file.text();
+            const lines = text.trim().split('\n');
+            const header = lines[0].toLowerCase();
+            
+            if (!header.includes('name') || !header.includes('workstream')) {
+                alert('Invalid CSV format. Please use the template.');
+                return;
+            }
+
+            const techs = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = parseCSVLine(lines[i]);
+                if (cols.length >= 5 && cols[0].trim()) {
+                    techs.push({
+                        name: cols[0].trim(),
+                        role: cols[1]?.trim() || '',
+                        postcode: cols[2]?.trim() || '',
+                        line_manager: cols[3]?.trim() || null,
+                        workstream: cols[4]?.trim() || 'Project Delivery'
+                    });
+                }
+            }
+
+            if (techs.length === 0) {
+                alert('No valid technicians found in CSV');
+                return;
+            }
+
+            const { error } = await supabaseClient
+                .from('technicians')
+                .insert(techs);
+
+            if (error) {
+                alert('Error uploading technicians: ' + error.message);
+                return;
+            }
+
+            alert(`Successfully uploaded ${techs.length} technician(s)`);
+            closeCSVModal();
+            await loadAllData();
+        }
+
+        async function uploadScheduleCSV(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            const text = await file.text();
+            const lines = text.trim().split('\n');
+            const headerCols = parseCSVLine(lines[0]);
+            
+            // Find date columns (should be after the first 8 columns)
+            const dateColumns = headerCols.slice(8);
+            
+            if (dateColumns.length === 0) {
+                alert('Invalid CSV format. Please include date columns.');
+                return;
+            }
+
+            // Get all technicians for name lookup
+            const { data: allTechs } = await supabaseClient
+                .from('technicians')
+                .select('id, name');
+            
+            const techMap = {};
+            allTechs?.forEach(t => techMap[t.name.toLowerCase()] = t.id);
+
+            const entries = [];
+            const notFound = new Set();
+
+            for (let i = 1; i < lines.length; i++) {
+                const cols = parseCSVLine(lines[i]);
+                if (cols.length < 9 || !cols[0].trim()) continue;
+
+                const techName = cols[0].trim();
+                const techId = techMap[techName.toLowerCase()];
+                
+                if (!techId) {
+                    notFound.add(techName);
+                    continue;
+                }
+
+                const qNumber = cols[1]?.trim() || '';
+                const client = cols[2]?.trim() || '';
+                const location = cols[3]?.trim() || '';
+                const task = cols[4]?.trim() || '';
+                const partner = cols[5]?.trim() || null;
+                const jobStatus = cols[6]?.trim()?.toLowerCase() || 'live';
+                const isNight = cols[7]?.trim()?.toLowerCase() === 'yes';
+
+                // Process each date column
+                for (let j = 0; j < dateColumns.length; j++) {
+                    const dateStr = dateColumns[j].trim();
+                    const hasEntry = cols[8 + j]?.trim()?.toLowerCase();
+                    
+                    if (hasEntry === 'yes' || hasEntry === 'y' || hasEntry === '1' || hasEntry === 'true') {
+                        entries.push({
+                            technician_id: techId,
+                            date: dateStr,
+                            entry_type: 'job',
+                            q_number: qNumber,
+                            client: client,
+                            location: location,
+                            task: task,
+                            partner: partner,
+                            job_status: jobStatus,
+                            is_night: isNight
+                        });
+                    }
+                }
+            }
+
+            if (notFound.size > 0) {
+                alert(`Warning: Could not find technicians: ${Array.from(notFound).join(', ')}`);
+            }
+
+            if (entries.length === 0) {
+                alert('No valid schedule entries found in CSV');
+                return;
+            }
+
+            const { error } = await supabaseClient
+                .from('schedule_entries')
+                .insert(entries);
+
+            if (error) {
+                alert('Error uploading schedule: ' + error.message);
+                return;
+            }
+
+            alert(`Successfully uploaded ${entries.length} schedule entry(ies)`);
+            closeCSVModal();
+            await loadAllData();
+        }
+
+        function parseCSVLine(line) {
+            const result = [];
+            let current = '';
+            let inQuotes = false;
+            
+            for (let i = 0; i < line.length; i++) {
+                const char = line[i];
+                if (char === '"') {
+                    inQuotes = !inQuotes;
+                } else if (char === ',' && !inQuotes) {
+                    result.push(current);
+                    current = '';
+                } else {
+                    current += char;
+                }
+            }
+            result.push(current);
+            return result;
+        }
+
         // Real-time sync
         function setupRealtimeSync() {
             if (!supabaseClient) return;
@@ -3188,13 +3591,28 @@
                         </div>
                     `;
                 } else if (dayData?.jobs && dayData.jobs.length > 0) {
+                    const getJobColor = (job) => {
+                        if (job.isNight) return { bg: '#312e81', border: '#6366f1', text: '#a5b4fc' };
+                        switch(job.jobStatus) {
+                            case 'inactive': return { bg: 'rgba(239,68,68,0.1)', border: '#ef4444', text: '#ef4444' };
+                            case 'pending': return { bg: 'rgba(245,158,11,0.1)', border: '#f59e0b', text: '#f59e0b' };
+                            case 'live':
+                            default: return { bg: 'rgba(34,197,94,0.1)', border: '#22c55e', text: '#22c55e' };
+                        }
+                    };
                     body.innerHTML = `
                         <div class="panel-section">
                             <div class="panel-section-title">Jobs (${dayData.jobs.length})</div>
                             <div class="panel-jobs-list">
-                                ${dayData.jobs.map(job => `
-                                    <div class="panel-job-card">
-                                        <div class="panel-job-q">${job.q}</div>
+                                ${dayData.jobs.map(job => {
+                                    const colors = getJobColor(job);
+                                    const statusLabel = job.isNight ? '🌙 Night' : (job.jobStatus === 'inactive' ? 'Inactive' : job.jobStatus === 'pending' ? 'Pending' : 'Live');
+                                    return `
+                                    <div class="panel-job-card" style="background: ${colors.bg}; border-left: 3px solid ${colors.border};">
+                                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                                            <div class="panel-job-q" style="color: ${job.isNight ? colors.text : 'var(--brand-primary)'};">${job.isNight ? '🌙 ' : ''}${job.q}</div>
+                                            <span style="font-size: 0.625rem; padding: 0.125rem 0.5rem; border-radius: 1rem; background: ${colors.border}; color: white; font-weight: 600;">${statusLabel}</span>
+                                        </div>
                                         <div class="panel-job-client">${job.client}</div>
                                         <div class="panel-job-details">
                                             <div class="panel-job-detail">
@@ -3213,7 +3631,7 @@
                                             ` : ''}
                                         </div>
                                     </div>
-                                `).join('')}
+                                `}).join('')}
                             </div>
                         </div>
                         <div class="panel-section">
@@ -3239,16 +3657,22 @@
 
                 // Footer with edit buttons
                 if (currentUser) {
+                    // Find previous entry for this tech
+                    const hasPreviousEntry = findPreviousEntry(tech.id, dayIndex) !== null;
+                    const copyPrevBtn = hasPreviousEntry ? `<button class="panel-btn panel-btn-secondary" onclick="copyPreviousEntry('${tech.id}', ${dayIndex})" title="Copy last activity">📋 Copy</button>` : '';
+                    
                     if (hasData) {
                         footer.innerHTML = `
-                            <button class="panel-btn panel-btn-secondary" onclick="showAddEntryModal('${tech.id}', ${dayIndex})">+ Add More</button>
+                            <button class="panel-btn panel-btn-secondary" onclick="showAddEntryModal('${tech.id}', ${dayIndex})">+ Add</button>
                             <button class="panel-btn panel-btn-secondary" onclick="showEditEntryModal('${tech.id}', ${dayIndex})">Edit</button>
-                            <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Technician</button>
+                            ${copyPrevBtn}
+                            <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Tech</button>
                         `;
                     } else {
                         footer.innerHTML = `
                             <button class="panel-btn panel-btn-secondary" onclick="showAddEntryModal('${tech.id}', ${dayIndex})">Add Entry</button>
-                            <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Technician</button>
+                            ${copyPrevBtn}
+                            <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Tech</button>
                         `;
                     }
                 } else {
