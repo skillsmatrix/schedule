@@ -3036,19 +3036,39 @@
         }
 
         function downloadScheduleTemplate() {
-            // Get dates for current week
+            // Get dates for current week in DD/MM/YY format
             const dates = [];
+            const isoDateMap = {};
             for (let i = 0; i < 7; i++) {
                 const d = new Date(currentWeekStart);
                 d.setDate(d.getDate() + i);
-                dates.push(d.toISOString().split('T')[0]);
+                const formatted = `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getFullYear()).slice(-2)}`;
+                dates.push(formatted);
+                isoDateMap[formatted] = d.toISOString().split('T')[0];
             }
             
-            const header = 'Name,Q Number,Client,Location,Task,Partner,Job Status,Night Work,' + dates.join(',');
-            const example1 = 'John Smith,Q12345,Thames Water,Beckton STW,Panel Install,,live,no,yes,yes,no,no,no,no,no';
-            const example2 = 'Jane Doe,Q12346,Southern Water,Testwood,Pump Service,John Smith,pending,no,no,yes,yes,yes,no,no,no';
+            const header = 'Field,' + dates.join(',');
+            const rows = [
+                header,
+                'Name,John Smith,John Smith,John Smith,John Smith,John Smith,,',
+                'Q Number,Q12345,Q12345,Q12345,Q12345,Q12345,,',
+                'Client,Thames Water,Thames Water,Thames Water,Thames Water,Thames Water,,',
+                'Location,Beckton STW,Beckton STW,Beckton STW,Beckton STW,Beckton STW,,',
+                'Task,Panel Install,Panel Install,Panel Install,Panel Install,Panel Install,,',
+                'Partner,,,,,,,',
+                'Job Status,live,live,live,live,live,,',
+                'Night Work,no,no,no,no,no,,',
+                'Name,Jane Doe,Jane Doe,,,,,',
+                'Q Number,Q12346,Q12346,,,,,',
+                'Client,Southern Water,Southern Water,,,,,',
+                'Location,Testwood,Testwood,,,,,',
+                'Task,Pump Service,Pump Service,,,,,',
+                'Partner,John Smith,John Smith,,,,,',
+                'Job Status,pending,pending,,,,,',
+                'Night Work,no,no,,,,,'
+            ];
             
-            const csv = header + '\n' + example1 + '\n' + example2;
+            const csv = rows.join('\n');
             downloadCSV(csv, 'schedule_template.csv');
         }
 
@@ -3114,13 +3134,22 @@
             const lines = text.trim().split('\n');
             const headerCols = parseCSVLine(lines[0]);
             
-            // Find date columns (should be after the first 8 columns)
-            const dateColumns = headerCols.slice(8);
-            
-            if (dateColumns.length === 0) {
-                alert('Invalid CSV format. Please include date columns.');
-                return;
-            }
+            // First column is "Field", rest are dates
+            const dateCols = headerCols.slice(1).map(d => {
+                // Parse DD/MM/YY or DD/MM/YYYY format to ISO
+                const cleaned = d.trim();
+                if (!cleaned) return null;
+                
+                const parts = cleaned.split('/');
+                if (parts.length === 3) {
+                    let year = parts[2];
+                    if (year.length === 2) year = '20' + year;
+                    return `${year}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+                }
+                // Try ISO format
+                if (cleaned.match(/^\d{4}-\d{2}-\d{2}$/)) return cleaned;
+                return null;
+            });
 
             // Get all technicians for name lookup
             const { data: allTechs } = await supabaseClient
@@ -3128,55 +3157,84 @@
                 .select('id, name');
             
             const techMap = {};
-            allTechs?.forEach(t => techMap[t.name.toLowerCase()] = t.id);
+            allTechs?.forEach(t => techMap[t.name.toLowerCase().trim()] = t.id);
 
             const entries = [];
             const notFound = new Set();
-
-            for (let i = 1; i < lines.length; i++) {
-                const cols = parseCSVLine(lines[i]);
-                if (cols.length < 9 || !cols[0].trim()) continue;
-
-                const techName = cols[0].trim();
-                const techId = techMap[techName.toLowerCase()];
+            
+            // Process in groups of 8 rows (one person block)
+            let i = 1; // Skip header
+            while (i < lines.length) {
+                // Read 8 rows for one person
+                const block = {};
+                const fieldOrder = ['name', 'q_number', 'client', 'location', 'task', 'partner', 'job_status', 'night_work'];
                 
-                if (!techId) {
-                    notFound.add(techName);
+                for (let j = 0; j < 8 && (i + j) < lines.length; j++) {
+                    const cols = parseCSVLine(lines[i + j]);
+                    const fieldName = cols[0]?.toLowerCase().replace(/\s+/g, '_').trim();
+                    
+                    // Map various field name formats
+                    let mappedField = fieldName;
+                    if (fieldName === 'qnumber' || fieldName === 'q_number' || fieldName === 'q') mappedField = 'q_number';
+                    if (fieldName === 'jobstatus' || fieldName === 'job_status' || fieldName === 'status') mappedField = 'job_status';
+                    if (fieldName === 'nightwork' || fieldName === 'night_work' || fieldName === 'night') mappedField = 'night_work';
+                    
+                    if (fieldOrder.includes(mappedField)) {
+                        block[mappedField] = cols.slice(1); // Values for each date
+                    }
+                }
+                
+                // Skip if no name found
+                if (!block.name || block.name.every(n => !n?.trim())) {
+                    i += 8;
                     continue;
                 }
 
-                const qNumber = cols[1]?.trim() || '';
-                const client = cols[2]?.trim() || '';
-                const location = cols[3]?.trim() || '';
-                const task = cols[4]?.trim() || '';
-                const partner = cols[5]?.trim() || null;
-                const jobStatus = cols[6]?.trim()?.toLowerCase() || 'live';
-                const isNight = cols[7]?.trim()?.toLowerCase() === 'yes';
-
                 // Process each date column
-                for (let j = 0; j < dateColumns.length; j++) {
-                    const dateStr = dateColumns[j].trim();
-                    const hasEntry = cols[8 + j]?.trim()?.toLowerCase();
+                for (let col = 0; col < dateCols.length; col++) {
+                    const dateStr = dateCols[col];
+                    if (!dateStr) continue;
                     
-                    if (hasEntry === 'yes' || hasEntry === 'y' || hasEntry === '1' || hasEntry === 'true') {
-                        entries.push({
-                            technician_id: techId,
-                            date: dateStr,
-                            entry_type: 'job',
-                            q_number: qNumber,
-                            client: client,
-                            location: location,
-                            task: task,
-                            partner: partner,
-                            job_status: jobStatus,
-                            is_night: isNight
-                        });
+                    const name = block.name?.[col]?.trim();
+                    if (!name) continue;
+                    
+                    const techId = techMap[name.toLowerCase()];
+                    if (!techId) {
+                        notFound.add(name);
+                        continue;
                     }
+                    
+                    const qNumber = block.q_number?.[col]?.trim();
+                    const client = block.client?.[col]?.trim();
+                    const location = block.location?.[col]?.trim();
+                    const task = block.task?.[col]?.trim();
+                    
+                    // Skip if no meaningful data for this date
+                    if (!qNumber && !location && !task) continue;
+                    
+                    const partner = block.partner?.[col]?.trim() || null;
+                    const jobStatus = block.job_status?.[col]?.trim()?.toLowerCase() || 'live';
+                    const isNight = ['yes', 'y', '1', 'true'].includes(block.night_work?.[col]?.trim()?.toLowerCase());
+                    
+                    entries.push({
+                        technician_id: techId,
+                        date: dateStr,
+                        entry_type: 'job',
+                        q_number: qNumber || '',
+                        client: client || '',
+                        location: location || '',
+                        task: task || '',
+                        partner: partner,
+                        job_status: jobStatus,
+                        is_night: isNight
+                    });
                 }
+                
+                i += 8;
             }
 
             if (notFound.size > 0) {
-                alert(`Warning: Could not find technicians: ${Array.from(notFound).join(', ')}`);
+                alert(`Warning: Could not find technicians: ${Array.from(notFound).join(', ')}\n\nMake sure technicians are added first.`);
             }
 
             if (entries.length === 0) {
