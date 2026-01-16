@@ -1916,12 +1916,12 @@
 
         // ==================== SCHEDULE ENTRY CRUD ====================
 
-        function showAddEntryModal(techId, dayIndex) {
+        function showAddEntryModal(techId, dayIndex, isNightWork = false) {
             if (!currentUser) {
                 alert('Please sign in to edit the schedule');
                 return;
             }
-            showEntryModal(techId, dayIndex, null);
+            showEntryModal(techId, dayIndex, null, false, isNightWork);
         }
 
         function showEditEntryModal(techId, dayIndex, entryType = 'job') {
@@ -1931,10 +1931,10 @@
             }
             const tech = TECHNICIANS.find(t => t.id === techId);
             const dayData = tech?.schedule[dayIndex];
-            showEntryModal(techId, dayIndex, dayData);
+            showEntryModal(techId, dayIndex, dayData, true);
         }
 
-        function showEntryModal(techId, dayIndex, existingData = null) {
+        function showEntryModal(techId, dayIndex, existingData = null, isEditMode = false, isNightWork = false) {
             const tech = TECHNICIANS.find(t => t.id === techId);
             if (!tech) return;
 
@@ -1942,15 +1942,20 @@
             date.setDate(date.getDate() + dayIndex);
             const dateStr = date.toISOString().split('T')[0];
 
-            const isEdit = existingData && (existingData.status || (existingData.jobs && existingData.jobs.length > 0));
-            const isStatus = existingData?.status;
+            const isStatus = existingData?.status || false;
+            
+            // Build partner dropdown from current technicians
+            const partnerOptions = TECHNICIANS
+                .filter(t => t.id !== techId)
+                .map(t => `<option value="${t.name}">${t.name}</option>`)
+                .join('');
             
             const overlay = document.createElement('div');
             overlay.id = 'entryModalOverlay';
             overlay.style.cssText = `
                 position: fixed;
                 inset: 0;
-                background: rgba(15, 23, 42, 0.6);
+                background: ${isNightWork ? 'rgba(0, 0, 20, 0.85)' : 'rgba(15, 23, 42, 0.6)'};
                 backdrop-filter: blur(4px);
                 z-index: 200;
                 display: flex;
@@ -1959,18 +1964,21 @@
             `;
 
             const modal = document.createElement('div');
+            modal.id = 'entryModal';
             modal.style.cssText = `
-                background: var(--bg-secondary);
+                background: ${isNightWork ? '#1e293b' : 'var(--bg-secondary)'};
                 border-radius: 1rem;
                 padding: 2rem;
                 width: 90%;
                 max-width: 480px;
-                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+                box-shadow: 0 20px 40px rgba(0,0,0,0.3);
                 max-height: 90vh;
                 overflow-y: auto;
+                ${isNightWork ? 'border: 1px solid #6366f1;' : ''}
             `;
 
             const statusOptions = Object.entries(STATUS_CONFIG)
+                .filter(([key]) => key !== 'night') // Remove night from status options
                 .map(([key, val]) => `<option value="${key}" ${existingData?.status === key ? 'selected' : ''}>${val.icon} ${val.label}</option>`)
                 .join('');
 
@@ -1978,10 +1986,15 @@
                 .map(c => `<option value="${c}">${c}</option>`)
                 .join('');
 
+            const titleText = isNightWork ? '🌙 Add Night Work' : (isEditMode ? 'Edit Entry' : 'Add Entry');
+            const titleColor = isNightWork ? '#a5b4fc' : 'var(--text-primary)';
+            const subtitleColor = isNightWork ? '#94a3b8' : 'var(--text-muted)';
+
             modal.innerHTML = `
-                <h2 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; color: var(--text-primary);">${isEdit ? 'Edit Entry' : 'Add Entry'}</h2>
-                <p style="margin: 0 0 1.5rem 0; font-size: 0.875rem; color: var(--text-muted);">${tech.name} - ${formatDate(date).full}</p>
+                <h2 style="margin: 0 0 0.25rem 0; font-size: 1.25rem; color: ${titleColor};">${titleText}</h2>
+                <p style="margin: 0 0 1.5rem 0; font-size: 0.875rem; color: ${subtitleColor};">${tech.name} - ${formatDate(date).full}</p>
                 
+                ${!isNightWork ? `
                 <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem;">
                     <button type="button" id="tabJob" onclick="switchEntryTab('job')" style="
                         flex: 1;
@@ -2008,13 +2021,16 @@
                         font-family: inherit;
                     ">Status</button>
                 </div>
+                ` : ''}
 
                 <form id="entryForm">
                     <input type="hidden" id="entryTechId" value="${techId}">
                     <input type="hidden" id="entryDate" value="${dateStr}">
                     <input type="hidden" id="entryDayIndex" value="${dayIndex}">
+                    <input type="hidden" id="entryIsNightWork" value="${isNightWork}">
+                    <input type="hidden" id="entryIsEditMode" value="${isEditMode}">
                     
-                    <div id="jobFields" style="display: ${!isStatus ? 'block' : 'none'};">
+                    <div id="jobFields" style="display: ${(!isStatus && !isNightWork) ? 'block' : 'none'};">
                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
                             <div>
                                 <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Q Number</label>
@@ -2032,7 +2048,7 @@
                             </div>
                             <div>
                                 <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Client</label>
-                                <select id="entryClient" style="
+                                <select id="entryClient" onchange="toggleOtherClient()" style="
                                     width: 100%;
                                     padding: 0.625rem 0.75rem;
                                     border: 1px solid var(--border-color);
@@ -2047,6 +2063,20 @@
                                     ${clientOptions}
                                 </select>
                             </div>
+                        </div>
+                        <div id="otherClientField" style="display: none; margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Other Client Name</label>
+                            <input type="text" id="entryOtherClient" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid var(--border-color);
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: var(--bg-secondary);
+                                color: var(--text-primary);
+                                box-sizing: border-box;
+                            " placeholder="Enter client name">
                         </div>
                         <div style="margin-bottom: 1rem;">
                             <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Location</label>
@@ -2079,7 +2109,7 @@
                             </div>
                             <div>
                                 <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Partner</label>
-                                <input type="text" id="entryPartner" value="${existingData?.jobs?.[0]?.partner || ''}" style="
+                                <select id="entryPartner" style="
                                     width: 100%;
                                     padding: 0.625rem 0.75rem;
                                     border: 1px solid var(--border-color);
@@ -2089,12 +2119,32 @@
                                     background: var(--bg-secondary);
                                     color: var(--text-primary);
                                     box-sizing: border-box;
-                                " placeholder="Working with...">
+                                ">
+                                    <option value="">None</option>
+                                    ${partnerOptions}
+                                </select>
                             </div>
                         </div>
                     </div>
 
-                    <div id="statusFields" style="display: ${isStatus ? 'block' : 'none'};">
+                    <div id="nightWorkFields" style="display: ${isNightWork ? 'block' : 'none'};">
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: #a5b4fc; margin-bottom: 0.375rem;">Location / Site</label>
+                            <input type="text" id="entryNightLocation" style="
+                                width: 100%;
+                                padding: 0.625rem 0.75rem;
+                                border: 1px solid #4f46e5;
+                                border-radius: 0.5rem;
+                                font-size: 0.875rem;
+                                font-family: inherit;
+                                background: #334155;
+                                color: #f1f5f9;
+                                box-sizing: border-box;
+                            " placeholder="Where is the night work?">
+                        </div>
+                    </div>
+
+                    <div id="statusFields" style="display: ${(isStatus && !isNightWork) ? 'block' : 'none'};">
                         <div style="margin-bottom: 1rem;">
                             <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Status Type</label>
                             <select id="entryStatusType" style="
@@ -2129,7 +2179,7 @@
                     </div>
 
                     <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem;">
-                        ${isEdit ? `<button type="button" onclick="clearDayEntries('${techId}', ${dayIndex})" style="
+                        ${isEditMode ? `<button type="button" onclick="clearDayEntries('${techId}', ${dayIndex})" style="
                             padding: 0.625rem 1rem;
                             border: 1px solid #f43f5e;
                             background: transparent;
@@ -2143,9 +2193,9 @@
                         <div style="flex: 1;"></div>
                         <button type="button" onclick="closeEntryModal()" style="
                             padding: 0.625rem 1rem;
-                            border: 1px solid var(--border-color);
-                            background: var(--bg-secondary);
-                            color: var(--text-primary);
+                            border: 1px solid ${isNightWork ? '#4f46e5' : 'var(--border-color)'};
+                            background: ${isNightWork ? '#334155' : 'var(--bg-secondary)'};
+                            color: ${isNightWork ? '#a5b4fc' : 'var(--text-primary)'};
                             border-radius: 0.5rem;
                             font-size: 0.875rem;
                             font-weight: 500;
@@ -2155,7 +2205,7 @@
                         <button type="submit" style="
                             padding: 0.625rem 1.25rem;
                             border: none;
-                            background: var(--brand-gradient);
+                            background: ${isNightWork ? '#6366f1' : 'var(--brand-gradient)'};
                             color: white;
                             border-radius: 0.5rem;
                             font-size: 0.875rem;
@@ -2172,7 +2222,22 @@
 
             // Set client value if editing
             if (existingData?.jobs?.[0]?.client) {
-                document.getElementById('entryClient').value = existingData.jobs[0].client;
+                const clientSelect = document.getElementById('entryClient');
+                const clientValue = existingData.jobs[0].client;
+                // Check if it's a known client
+                const knownClients = ['Thames Water', 'Southern Water', 'United Utilities', 'Severn Trent', 'Anglian Water', 'Scottish Water', 'SEW', 'Internal', 'MWH', 'Other'];
+                if (knownClients.includes(clientValue)) {
+                    clientSelect.value = clientValue;
+                } else {
+                    clientSelect.value = 'Other';
+                    document.getElementById('otherClientField').style.display = 'block';
+                    document.getElementById('entryOtherClient').value = clientValue;
+                }
+            }
+
+            // Set partner value if editing
+            if (existingData?.jobs?.[0]?.partner) {
+                document.getElementById('entryPartner').value = existingData.jobs[0].partner;
             }
 
             document.getElementById('entryForm').onsubmit = async (e) => {
@@ -2183,6 +2248,12 @@
             overlay.onclick = (e) => {
                 if (e.target === overlay) closeEntryModal();
             };
+        }
+
+        function toggleOtherClient() {
+            const clientSelect = document.getElementById('entryClient');
+            const otherField = document.getElementById('otherClientField');
+            otherField.style.display = clientSelect.value === 'Other' ? 'block' : 'none';
         }
 
         function switchEntryTab(tab) {
@@ -2216,60 +2287,79 @@
         async function saveEntry() {
             const techId = document.getElementById('entryTechId').value;
             const dateStr = document.getElementById('entryDate').value;
-            const dayIndex = parseInt(document.getElementById('entryDayIndex').value);
+            const isNightWork = document.getElementById('entryIsNightWork').value === 'true';
+            const isEditMode = document.getElementById('entryIsEditMode').value === 'true';
 
-            const isJob = document.getElementById('jobFields').style.display !== 'none';
-
-            // First, clear existing entries for this day
-            await supabaseClient
-                .from('schedule_entries')
-                .delete()
-                .eq('technician_id', techId)
-                .eq('date', dateStr);
+            // Only clear existing entries if we're in edit mode
+            if (isEditMode) {
+                await supabaseClient
+                    .from('schedule_entries')
+                    .delete()
+                    .eq('technician_id', techId)
+                    .eq('date', dateStr);
+            }
 
             let entryData;
-            if (isJob) {
-                const qNumber = document.getElementById('entryQNumber').value;
-                const client = document.getElementById('entryClient').value;
-                const location = document.getElementById('entryLocation').value;
-                const task = document.getElementById('entryTask').value;
-                const partner = document.getElementById('entryPartner').value;
-
-                if (!qNumber && !location && !task) {
-                    closeEntryModal();
-                    closePanel();
-                    await loadAllData();
-                    return;
-                }
-
-                entryData = {
-                    technician_id: techId,
-                    date: dateStr,
-                    entry_type: 'job',
-                    q_number: qNumber,
-                    client: client,
-                    location: location,
-                    task: task,
-                    partner: partner || null
-                };
-            } else {
-                const statusType = document.getElementById('entryStatusType').value;
-                const statusText = document.getElementById('entryStatusText').value;
-
-                if (!statusType) {
-                    closeEntryModal();
-                    closePanel();
-                    await loadAllData();
-                    return;
-                }
-
+            
+            if (isNightWork) {
+                const nightLocation = document.getElementById('entryNightLocation').value;
                 entryData = {
                     technician_id: techId,
                     date: dateStr,
                     entry_type: 'status',
-                    status_type: statusType,
-                    status_text: statusText || null
+                    status_type: 'night',
+                    status_text: nightLocation || null
                 };
+            } else {
+                const jobFields = document.getElementById('jobFields');
+                const isJob = jobFields.style.display !== 'none';
+
+                if (isJob) {
+                    const qNumber = document.getElementById('entryQNumber').value;
+                    let client = document.getElementById('entryClient').value;
+                    if (client === 'Other') {
+                        client = document.getElementById('entryOtherClient').value || 'Other';
+                    }
+                    const location = document.getElementById('entryLocation').value;
+                    const task = document.getElementById('entryTask').value;
+                    const partner = document.getElementById('entryPartner').value;
+
+                    if (!qNumber && !location && !task) {
+                        closeEntryModal();
+                        closePanel();
+                        await loadAllData();
+                        return;
+                    }
+
+                    entryData = {
+                        technician_id: techId,
+                        date: dateStr,
+                        entry_type: 'job',
+                        q_number: qNumber,
+                        client: client,
+                        location: location,
+                        task: task,
+                        partner: partner || null
+                    };
+                } else {
+                    const statusType = document.getElementById('entryStatusType').value;
+                    const statusText = document.getElementById('entryStatusText').value;
+
+                    if (!statusType) {
+                        closeEntryModal();
+                        closePanel();
+                        await loadAllData();
+                        return;
+                    }
+
+                    entryData = {
+                        technician_id: techId,
+                        date: dateStr,
+                        entry_type: 'status',
+                        status_type: statusType,
+                        status_text: statusText || null
+                    };
+                }
             }
 
             const { error } = await supabaseClient
@@ -2711,10 +2801,19 @@
 
                 // Footer with edit buttons
                 if (currentUser) {
-                    footer.innerHTML = `
-                        <button class="panel-btn panel-btn-secondary" onclick="showEditEntryModal('${tech.id}', ${dayIndex})">${hasData ? 'Edit Entry' : 'Add Entry'}</button>
-                        <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Edit Technician</button>
-                    `;
+                    if (hasData) {
+                        footer.innerHTML = `
+                            <button class="panel-btn panel-btn-secondary" onclick="showAddEntryModal('${tech.id}', ${dayIndex})">+ Add More</button>
+                            <button class="panel-btn panel-btn-secondary" onclick="showEditEntryModal('${tech.id}', ${dayIndex})">Edit</button>
+                            <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Technician</button>
+                        `;
+                    } else {
+                        footer.innerHTML = `
+                            <button class="panel-btn panel-btn-secondary" onclick="showAddEntryModal('${tech.id}', ${dayIndex})">Add Entry</button>
+                            <button class="panel-btn panel-btn-secondary" style="background: #6366f1; color: white; border-color: #6366f1;" onclick="showAddEntryModal('${tech.id}', ${dayIndex}, true)">🌙 Night Work</button>
+                            <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Technician</button>
+                        `;
+                    }
                 } else {
                     footer.innerHTML = `
                         <button class="panel-btn panel-btn-secondary" onclick="showLoginModal()">Sign in to edit</button>
