@@ -2542,9 +2542,39 @@
             const techId = document.getElementById('entryTechId').value;
             const dateStr = document.getElementById('entryDate').value;
             const isEditMode = document.getElementById('entryIsEditMode').value === 'true';
+            
+            // Calculate day index
+            const weekDates = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(currentWeekStart);
+                d.setDate(d.getDate() + i);
+                weekDates.push(toLocalDateString(d));
+            }
+            const dayIndex = weekDates.indexOf(dateStr);
+
+            // Get old partner before clearing (for partner sync)
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            const oldPartnerName = tech?.schedule[dayIndex]?.jobs?.[0]?.partner;
 
             // Only clear existing entries if we're in edit mode
             if (isEditMode) {
+                // Also delete partner's linked entry if exists
+                if (oldPartnerName) {
+                    const oldPartner = TECHNICIANS.find(t => t.name === oldPartnerName);
+                    if (oldPartner) {
+                        await supabaseClient
+                            .from('schedule_entries')
+                            .delete()
+                            .eq('technician_id', oldPartner.id)
+                            .eq('date', dateStr)
+                            .eq('partner', tech.name);
+                        
+                        // Update old partner's cell locally
+                        await reloadTechnicianDay(oldPartner, dayIndex, dateStr);
+                        updateCell(oldPartner, dayIndex);
+                    }
+                }
+                
                 await supabaseClient
                     .from('schedule_entries')
                     .delete()
@@ -2556,20 +2586,25 @@
             const isJob = jobFields.style.display !== 'none';
 
             let entryData;
+            let partnerEntryData = null;
             
             if (isJob) {
                 const qNumber = document.getElementById('entryQNumber').value;
                 const client = document.getElementById('entryClient').value;
                 const location = document.getElementById('entryLocation').value;
                 const task = document.getElementById('entryTask').value;
-                const partner = document.getElementById('entryPartner').value;
+                const partnerName = document.getElementById('entryPartner').value;
                 const isNight = document.getElementById('entryIsNight').checked;
                 const jobStatus = document.querySelector('input[name="jobStatus"]:checked')?.value || 'live';
 
                 if (!qNumber && !location && !task) {
                     closeEntryModal();
                     closePanel();
-                    await loadAllData();
+                    // Update cell locally
+                    if (tech && dayIndex >= 0) {
+                        await reloadTechnicianDay(tech, dayIndex, dateStr);
+                        updateCell(tech, dayIndex);
+                    }
                     return;
                 }
 
@@ -2581,10 +2616,29 @@
                     client: client,
                     location: location,
                     task: task,
-                    partner: partner || null,
+                    partner: partnerName || null,
                     is_night: isNight,
                     job_status: jobStatus
                 };
+
+                // Create partner entry if partner selected
+                if (partnerName) {
+                    const partnerTech = TECHNICIANS.find(t => t.name === partnerName);
+                    if (partnerTech) {
+                        partnerEntryData = {
+                            technician_id: partnerTech.id,
+                            date: dateStr,
+                            entry_type: 'job',
+                            q_number: qNumber,
+                            client: client,
+                            location: location,
+                            task: task,
+                            partner: tech.name, // The original tech is the partner
+                            is_night: isNight,
+                            job_status: jobStatus
+                        };
+                    }
+                }
             } else {
                 const statusType = document.getElementById('entryStatusType').value;
                 const statusText = document.getElementById('entryStatusText').value;
@@ -2592,7 +2646,10 @@
                 if (!statusType) {
                     closeEntryModal();
                     closePanel();
-                    await loadAllData();
+                    if (tech && dayIndex >= 0) {
+                        await reloadTechnicianDay(tech, dayIndex, dateStr);
+                        updateCell(tech, dayIndex);
+                    }
                     return;
                 }
 
@@ -2605,6 +2662,7 @@
                 };
             }
 
+            // Insert main entry
             const { error } = await supabaseClient
                 .from('schedule_entries')
                 .insert([entryData]);
@@ -2614,9 +2672,40 @@
                 return;
             }
 
+            // Insert partner entry if exists
+            if (partnerEntryData) {
+                const partnerTech = TECHNICIANS.find(t => t.id === partnerEntryData.technician_id);
+                
+                // First delete any existing entries for partner on this day with this person as partner
+                await supabaseClient
+                    .from('schedule_entries')
+                    .delete()
+                    .eq('technician_id', partnerEntryData.technician_id)
+                    .eq('date', dateStr)
+                    .eq('partner', tech.name);
+                
+                const { error: partnerError } = await supabaseClient
+                    .from('schedule_entries')
+                    .insert([partnerEntryData]);
+
+                if (partnerError) {
+                    console.error('Error saving partner entry:', partnerError);
+                } else if (partnerTech && dayIndex >= 0) {
+                    // Update partner's cell locally
+                    await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
+                    updateCell(partnerTech, dayIndex);
+                }
+            }
+
+            // Update main tech's cell locally
+            if (tech && dayIndex >= 0) {
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
+            }
+
             closeEntryModal();
             closePanel();
-            await loadAllData();
+            showUpdateToast('Entry saved');
         }
 
         async function clearDayEntries(techId, dayIndex) {
@@ -2626,6 +2715,31 @@
             date.setDate(date.getDate() + dayIndex);
             const dateStr = toLocalDateString(date);
 
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (!tech) return;
+
+            // Get partners from existing jobs to delete their linked entries
+            const jobs = tech.schedule[dayIndex]?.jobs || [];
+            const partnersToUpdate = [];
+            
+            for (const job of jobs) {
+                if (job.partner) {
+                    const partnerTech = TECHNICIANS.find(t => t.name === job.partner);
+                    if (partnerTech) {
+                        // Delete partner's entry that has this tech as partner
+                        await supabaseClient
+                            .from('schedule_entries')
+                            .delete()
+                            .eq('technician_id', partnerTech.id)
+                            .eq('date', dateStr)
+                            .eq('partner', tech.name);
+                        
+                        partnersToUpdate.push({ tech: partnerTech, dayIndex, dateStr });
+                    }
+                }
+            }
+
+            // Delete main tech's entries
             const { error } = await supabaseClient
                 .from('schedule_entries')
                 .delete()
@@ -2637,11 +2751,14 @@
                 return;
             }
 
-            // Update locally instead of full reload
-            const tech = TECHNICIANS.find(t => t.id === techId);
-            if (tech) {
-                tech.schedule[dayIndex] = { jobs: [] };
-                updateCell(tech, dayIndex);
+            // Update main tech's cell locally
+            tech.schedule[dayIndex] = { jobs: [] };
+            updateCell(tech, dayIndex);
+
+            // Update partner cells
+            for (const p of partnersToUpdate) {
+                await reloadTechnicianDay(p.tech, p.dayIndex, p.dateStr);
+                updateCell(p.tech, p.dayIndex);
             }
 
             closeEntryModal();
@@ -2853,12 +2970,36 @@
                 techs = techs.filter(t => t.workstream === workstream);
             }
 
+            const dayIndex = bulkEntryState.dayIndex;
+            const dateStr = bulkEntryState.dateStr;
             const techIds = techs.map(t => t.id);
+            const partnersToUpdate = new Set();
+
+            // Find partners that need updating (outside the workstream being cleared)
+            for (const tech of techs) {
+                const jobs = tech.schedule[dayIndex]?.jobs || [];
+                for (const job of jobs) {
+                    if (job.partner) {
+                        const partnerTech = TECHNICIANS.find(t => t.name === job.partner);
+                        if (partnerTech && !techIds.includes(partnerTech.id)) {
+                            // Partner is outside the workstream being cleared
+                            partnersToUpdate.add(partnerTech.id);
+                            // Delete their linked entry
+                            await supabaseClient
+                                .from('schedule_entries')
+                                .delete()
+                                .eq('technician_id', partnerTech.id)
+                                .eq('date', dateStr)
+                                .eq('partner', tech.name);
+                        }
+                    }
+                }
+            }
             
             const { error } = await supabaseClient
                 .from('schedule_entries')
                 .delete()
-                .eq('date', bulkEntryState.dateStr)
+                .eq('date', dateStr)
                 .in('technician_id', techIds);
 
             if (error) {
@@ -2867,11 +3008,19 @@
             }
 
             // Update cells locally instead of full reload
-            const dayIndex = bulkEntryState.dayIndex;
             techs.forEach(tech => {
                 tech.schedule[dayIndex] = { jobs: [] };
                 updateCell(tech, dayIndex);
             });
+
+            // Update partner cells
+            for (const partnerId of partnersToUpdate) {
+                const partnerTech = TECHNICIANS.find(t => t.id === partnerId);
+                if (partnerTech) {
+                    await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
+                    updateCell(partnerTech, dayIndex);
+                }
+            }
 
             closeBulkEntryModal();
             showUpdateToast(`Cleared ${techs.length} technician(s)`);
@@ -2879,8 +3028,8 @@
 
         async function processNextBulkEntry() {
             if (bulkEntryState.currentTechIndex >= bulkEntryState.techsToProcess.length) {
-                // All done
-                await loadAllData();
+                // All done - just show toast, cells already updated
+                showUpdateToast('Bulk status applied');
                 return;
             }
 
@@ -3017,10 +3166,14 @@
             closeConflictModal();
 
             const tech = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
+            const dayIndex = bulkEntryState.dayIndex;
+            const dateStr = bulkEntryState.dateStr;
 
             if (action === 'replace') {
                 await deleteTechDayEntries(tech.id);
                 await addBulkEntryForTech(tech.id);
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
                 bulkEntryState.currentTechIndex++;
                 await processNextBulkEntry();
             } else if (action === 'skip') {
@@ -3030,6 +3183,8 @@
                 // Replace this one and all remaining conflicts
                 await deleteTechDayEntries(tech.id);
                 await addBulkEntryForTech(tech.id);
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
                 bulkEntryState.currentTechIndex++;
                 
                 // Process remaining with auto-replace
@@ -3037,9 +3192,11 @@
                     const t = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
                     await deleteTechDayEntries(t.id);
                     await addBulkEntryForTech(t.id);
+                    await reloadTechnicianDay(t, dayIndex, dateStr);
+                    updateCell(t, dayIndex);
                     bulkEntryState.currentTechIndex++;
                 }
-                await loadAllData();
+                showUpdateToast('Bulk status applied');
             } else if (action === 'skipAll') {
                 // Skip this one and all remaining conflicts
                 bulkEntryState.currentTechIndex++;
@@ -3047,15 +3204,17 @@
                 // Process remaining, skipping any with existing data
                 while (bulkEntryState.currentTechIndex < bulkEntryState.techsToProcess.length) {
                     const t = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
-                    const dayData = t.schedule[bulkEntryState.dayIndex];
+                    const dayData = t.schedule[dayIndex];
                     const hasData = dayData?.status || (dayData?.jobs && dayData.jobs.length > 0);
                     
                     if (!hasData) {
                         await addBulkEntryForTech(t.id);
+                        await reloadTechnicianDay(t, dayIndex, dateStr);
+                        updateCell(t, dayIndex);
                     }
                     bulkEntryState.currentTechIndex++;
                 }
-                await loadAllData();
+                showUpdateToast('Bulk status applied');
             }
         }
 
@@ -3189,6 +3348,8 @@
                 return;
             }
 
+            const tech = TECHNICIANS.find(t => t.id === techId);
+
             const { error } = await supabaseClient
                 .from('schedule_entries')
                 .insert(entriesToInsert);
@@ -3198,8 +3359,51 @@
                 return;
             }
 
+            // Also create partner entries
+            const partnerEntries = [];
+            for (const entry of entriesToInsert) {
+                if (entry.partner && entry.entry_type === 'job') {
+                    const partnerTech = TECHNICIANS.find(t => t.name === entry.partner);
+                    if (partnerTech) {
+                        partnerEntries.push({
+                            technician_id: partnerTech.id,
+                            date: dateStr,
+                            entry_type: 'job',
+                            q_number: entry.q_number,
+                            client: entry.client,
+                            location: entry.location,
+                            task: entry.task,
+                            partner: tech.name,
+                            is_night: entry.is_night,
+                            job_status: entry.job_status
+                        });
+                    }
+                }
+            }
+
+            if (partnerEntries.length > 0) {
+                await supabaseClient
+                    .from('schedule_entries')
+                    .insert(partnerEntries);
+                
+                // Update partner cells
+                for (const entry of partnerEntries) {
+                    const partnerTech = TECHNICIANS.find(t => t.id === entry.technician_id);
+                    if (partnerTech) {
+                        await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
+                        updateCell(partnerTech, dayIndex);
+                    }
+                }
+            }
+
+            // Update main tech cell
+            if (tech) {
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
+            }
+
             closePanel();
-            await loadAllData();
+            showUpdateToast('Entries copied');
         }
 
         // Check if there's any previous entry (for showing copy button)
