@@ -529,6 +529,22 @@
             background: var(--slate-100) !important;
         }
 
+        /* Real-time update highlight */
+        .day-cell.cell-updated {
+            animation: cellHighlight 1.5s ease-out;
+        }
+
+        @keyframes cellHighlight {
+            0% {
+                background: rgba(233, 19, 136, 0.2);
+                box-shadow: inset 0 0 0 2px var(--brand-primary);
+            }
+            100% {
+                background: var(--bg-secondary);
+                box-shadow: none;
+            }
+        }
+
         .day-cell.weekend {
             background: var(--bg-tertiary);
         }
@@ -3581,8 +3597,7 @@
                     { event: '*', schema: 'public', table: 'technicians' },
                     (payload) => {
                         console.log('Technicians changed:', payload);
-                        showUpdateToast();
-                        loadAllData();
+                        handleTechnicianChange(payload);
                     }
                 )
                 .subscribe();
@@ -3594,14 +3609,153 @@
                     { event: '*', schema: 'public', table: 'schedule_entries' },
                     (payload) => {
                         console.log('Schedule changed:', payload);
-                        showUpdateToast();
-                        loadAllData();
+                        handleScheduleChange(payload);
                     }
                 )
                 .subscribe();
         }
 
-        function showUpdateToast() {
+        function handleTechnicianChange(payload) {
+            const { eventType, new: newRecord, old: oldRecord } = payload;
+            
+            if (eventType === 'INSERT') {
+                // Add new technician to the list
+                const newTech = {
+                    id: newRecord.id,
+                    name: newRecord.name,
+                    role: newRecord.role,
+                    postcode: newRecord.postcode,
+                    workstream: newRecord.workstream,
+                    lineManager: newRecord.line_manager,
+                    schedule: {}
+                };
+                for (let i = 0; i < 7; i++) {
+                    newTech.schedule[i] = { jobs: [] };
+                }
+                TECHNICIANS.push(newTech);
+                renderSchedule();
+                showUpdateToast('New technician added');
+            } else if (eventType === 'UPDATE') {
+                // Update existing technician
+                const tech = TECHNICIANS.find(t => t.id === newRecord.id);
+                if (tech) {
+                    tech.name = newRecord.name;
+                    tech.role = newRecord.role;
+                    tech.postcode = newRecord.postcode;
+                    tech.workstream = newRecord.workstream;
+                    tech.lineManager = newRecord.line_manager;
+                    renderSchedule();
+                    showUpdateToast('Technician updated');
+                }
+            } else if (eventType === 'DELETE') {
+                // Remove technician
+                const index = TECHNICIANS.findIndex(t => t.id === oldRecord.id);
+                if (index !== -1) {
+                    TECHNICIANS.splice(index, 1);
+                    renderSchedule();
+                    showUpdateToast('Technician removed');
+                }
+            }
+        }
+
+        async function handleScheduleChange(payload) {
+            const { eventType, new: newRecord, old: oldRecord } = payload;
+            
+            // Get the affected technician and date
+            const techId = newRecord?.technician_id || oldRecord?.technician_id;
+            const dateStr = (newRecord?.date || oldRecord?.date)?.split('T')[0];
+            
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (!tech) return;
+            
+            // Calculate which day index this affects
+            const weekDates = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(currentWeekStart);
+                d.setDate(d.getDate() + i);
+                weekDates.push(toLocalDateString(d));
+            }
+            const dayIndex = weekDates.indexOf(dateStr);
+            
+            // If the change is not in the current week, ignore it
+            if (dayIndex < 0 || dayIndex > 6) return;
+            
+            if (eventType === 'DELETE') {
+                // Reload just this day's data for this technician
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
+                showUpdateToast('Entry removed');
+            } else {
+                // INSERT or UPDATE - reload this day's data
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
+                showUpdateToast(eventType === 'INSERT' ? 'New entry added' : 'Entry updated');
+            }
+        }
+
+        async function reloadTechnicianDay(tech, dayIndex, dateStr) {
+            // Fetch all entries for this technician on this date
+            const { data: entries, error } = await supabaseClient
+                .from('schedule_entries')
+                .select('*')
+                .eq('technician_id', tech.id)
+                .eq('date', dateStr);
+            
+            if (error) {
+                console.error('Error reloading day:', error);
+                return;
+            }
+            
+            // Reset the day
+            tech.schedule[dayIndex] = { jobs: [] };
+            
+            // Rebuild the day's data
+            entries?.forEach(entry => {
+                if (entry.entry_type === 'status') {
+                    tech.schedule[dayIndex] = { 
+                        status: entry.status_type, 
+                        text: entry.status_text 
+                    };
+                } else if (entry.entry_type === 'job') {
+                    if (!tech.schedule[dayIndex].jobs) {
+                        tech.schedule[dayIndex] = { jobs: [] };
+                    }
+                    tech.schedule[dayIndex].jobs.push({
+                        q: entry.q_number,
+                        client: entry.client,
+                        location: entry.location,
+                        task: entry.task,
+                        partner: entry.partner,
+                        isNight: entry.is_night || false,
+                        jobStatus: entry.job_status || 'live'
+                    });
+                }
+            });
+        }
+
+        function updateCell(tech, dayIndex) {
+            // Find the specific cell in the DOM and update just that cell
+            const rows = document.querySelectorAll('.person-row');
+            
+            for (const row of rows) {
+                const nameEl = row.querySelector('.person-name');
+                if (nameEl && nameEl.textContent === tech.name) {
+                    // Found the row - now find the right day cell
+                    const dayCells = row.querySelectorAll('.day-cell');
+                    const cell = dayCells[dayIndex];
+                    
+                    if (cell) {
+                        // Update just this cell's content with a highlight animation
+                        cell.innerHTML = renderDayCell(tech.schedule[dayIndex], tech, dayIndex);
+                        cell.classList.add('cell-updated');
+                        setTimeout(() => cell.classList.remove('cell-updated'), 1500);
+                    }
+                    break;
+                }
+            }
+        }
+
+        function showUpdateToast(message = 'Schedule updated') {
             // Remove existing toast if any
             const existingToast = document.getElementById('updateToast');
             if (existingToast) existingToast.remove();
@@ -3609,7 +3763,7 @@
             // Create toast
             const toast = document.createElement('div');
             toast.id = 'updateToast';
-            toast.innerHTML = '🔄 Schedule updated';
+            toast.innerHTML = `🔄 ${message}`;
             toast.style.cssText = `
                 position: fixed;
                 bottom: 2rem;
