@@ -2637,9 +2637,16 @@
                 return;
             }
 
+            // Update locally instead of full reload
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (tech) {
+                tech.schedule[dayIndex] = { jobs: [] };
+                updateCell(tech, dayIndex);
+            }
+
             closeEntryModal();
             closePanel();
-            await loadAllData();
+            showUpdateToast('Day cleared');
         }
 
         // ==================== BULK ENTRY ====================
@@ -2859,9 +2866,15 @@
                 return;
             }
 
+            // Update cells locally instead of full reload
+            const dayIndex = bulkEntryState.dayIndex;
+            techs.forEach(tech => {
+                tech.schedule[dayIndex] = { jobs: [] };
+                updateCell(tech, dayIndex);
+            });
+
             closeBulkEntryModal();
-            await loadAllData();
-            alert(`Cleared entries for ${techs.length} technician(s)`);
+            showUpdateToast(`Cleared ${techs.length} technician(s)`);
         }
 
         async function processNextBulkEntry() {
