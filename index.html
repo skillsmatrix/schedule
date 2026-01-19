@@ -2813,6 +2813,13 @@
                 updateCell(p.tech, p.dayIndex);
             }
 
+            // Broadcast to other users
+            const cellsToRefresh = [{ techId: techId, dateStr: dateStr }];
+            for (const p of partnersToUpdate) {
+                cellsToRefresh.push({ techId: p.tech.id, dateStr: p.dateStr });
+            }
+            broadcastCellRefresh(cellsToRefresh);
+
             closeEntryModal();
             closePanel();
             showUpdateToast('Day cleared');
@@ -2884,7 +2891,17 @@
                     // Update partner cell
                     await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
                     updateCell(partnerTech, dayIndex);
+                    
+                    // Broadcast to other users
+                    broadcastCellRefresh([
+                        { techId: techId, dateStr: dateStr },
+                        { techId: partnerTech.id, dateStr: dateStr }
+                    ]);
+                } else {
+                    broadcastCellRefresh([{ techId: techId, dateStr: dateStr }]);
                 }
+            } else {
+                broadcastCellRefresh([{ techId: techId, dateStr: dateStr }]);
             }
             
             // Update main tech cell
@@ -3155,6 +3172,13 @@
                     updateCell(partnerTech, dayIndex);
                 }
             }
+
+            // Broadcast to other users
+            const cellsToRefresh = techs.map(t => ({ techId: t.id, dateStr: dateStr }));
+            for (const partnerId of partnersToUpdate) {
+                cellsToRefresh.push({ techId: partnerId, dateStr: dateStr });
+            }
+            broadcastCellRefresh(cellsToRefresh);
 
             closeBulkEntryModal();
             showUpdateToast(`Cleared ${techs.length} technician(s)`);
@@ -3945,8 +3969,9 @@
 
         // Real-time sync
         let realtimeUpdateTimeout = null;
-        let pendingUpdates = new Map(); // Map of techId-dayIndex -> dateStr
+        let pendingUpdates = new Map(); // Map of techId-dateStr -> update info
         let ignoreRealtimeUntil = 0; // Timestamp to ignore realtime events until
+        let broadcastChannel = null; // For broadcasting cell updates
 
         function setupRealtimeSync() {
             if (!supabaseClient) return;
@@ -3984,6 +4009,60 @@
                     }
                 )
                 .subscribe();
+
+            // Subscribe to custom broadcast channel for cell refresh notifications
+            broadcastChannel = supabaseClient
+                .channel('cell-updates')
+                .on('broadcast', { event: 'refresh-cells' }, (payload) => {
+                    // Ignore if we're in the middle of our own changes
+                    if (Date.now() < ignoreRealtimeUntil) {
+                        console.log('Ignoring broadcast (local change in progress)');
+                        return;
+                    }
+                    console.log('Received cell refresh broadcast:', payload);
+                    handleCellRefreshBroadcast(payload.payload);
+                })
+                .subscribe();
+        }
+
+        // Broadcast which cells need refreshing (called after deletes)
+        async function broadcastCellRefresh(cells) {
+            if (!broadcastChannel) return;
+            
+            console.log('Broadcasting cell refresh:', cells);
+            await broadcastChannel.send({
+                type: 'broadcast',
+                event: 'refresh-cells',
+                payload: { cells }
+            });
+        }
+
+        // Handle incoming broadcast to refresh specific cells
+        async function handleCellRefreshBroadcast(data) {
+            if (!data?.cells || !Array.isArray(data.cells)) return;
+            
+            const weekDates = [];
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(currentWeekStart);
+                d.setDate(d.getDate() + i);
+                weekDates.push(toLocalDateString(d));
+            }
+            
+            for (const cell of data.cells) {
+                const { techId, dateStr } = cell;
+                const tech = TECHNICIANS.find(t => t.id === techId);
+                if (!tech) continue;
+                
+                const dayIndex = weekDates.indexOf(dateStr);
+                if (dayIndex < 0 || dayIndex > 6) continue;
+                
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
+            }
+            
+            if (data.cells.length > 0) {
+                showUpdateToast('Schedule updated');
+            }
         }
 
         // Call this before making changes to suppress realtime events
