@@ -3866,38 +3866,35 @@
         function queueScheduleUpdate(payload) {
             const { eventType, new: newRecord, old: oldRecord } = payload;
             
+            console.log('queueScheduleUpdate:', eventType, 'new:', newRecord, 'old:', oldRecord);
+            
             // Get the affected technician and date
             const techId = newRecord?.technician_id || oldRecord?.technician_id;
             const dateStr = (newRecord?.date || oldRecord?.date)?.split('T')[0];
             
-            // If we don't have techId or dateStr, queue a full reload
+            console.log('Parsed - techId:', techId, 'dateStr:', dateStr);
+            
+            // If we don't have techId or dateStr, we can't do a targeted update
+            // Instead of full reload, just skip this event (the data will be stale but no jarring refresh)
             if (!techId || !dateStr) {
-                pendingUpdates.set('full-reload', true);
-            } else {
-                // Queue this specific cell update
-                const key = `${techId}-${dateStr}`;
-                pendingUpdates.set(key, { techId, dateStr, eventType });
+                console.warn('Cannot identify cell for realtime update, skipping. Enable REPLICA IDENTITY FULL on schedule_entries table.');
+                return;
             }
             
-            // Debounce - wait 100ms for more updates before processing
+            // Queue this specific cell update
+            const key = `${techId}-${dateStr}`;
+            pendingUpdates.set(key, { techId, dateStr, eventType });
+            
+            // Debounce - wait 150ms for more updates before processing
             if (realtimeUpdateTimeout) {
                 clearTimeout(realtimeUpdateTimeout);
             }
             realtimeUpdateTimeout = setTimeout(() => {
                 processQueuedUpdates();
-            }, 100);
+            }, 150);
         }
 
         async function processQueuedUpdates() {
-            // Check if we need a full reload
-            if (pendingUpdates.has('full-reload')) {
-                pendingUpdates.clear();
-                await loadAllData();
-                showUpdateToast('Schedule updated');
-                return;
-            }
-            
-            // Process individual cell updates
             const updates = Array.from(pendingUpdates.values());
             pendingUpdates.clear();
             
