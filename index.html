@@ -2539,6 +2539,8 @@
         }
 
         async function saveEntry() {
+            suppressRealtimeEvents(3000); // Ignore realtime for 3 seconds
+            
             const techId = document.getElementById('entryTechId').value;
             const dateStr = document.getElementById('entryDate').value;
             const isEditMode = document.getElementById('entryIsEditMode').value === 'true';
@@ -2710,6 +2712,8 @@
 
         async function clearDayEntries(techId, dayIndex) {
             if (!confirm('Clear all entries for this day?')) return;
+            
+            suppressRealtimeEvents(3000); // Ignore realtime for 3 seconds
 
             const date = new Date(currentWeekStart);
             date.setDate(date.getDate() + dayIndex);
@@ -2938,6 +2942,8 @@
                 alert('Please select a status');
                 return;
             }
+            
+            suppressRealtimeEvents(5000); // Ignore realtime for 5 seconds (bulk operation)
 
             bulkEntryState.statusType = statusType;
             bulkEntryState.statusText = document.getElementById('bulkStatusText').value;
@@ -2963,6 +2969,8 @@
             if (!confirm(`Are you sure you want to clear all entries for ${workstreamLabel} on this day?\n\nThis cannot be undone.`)) {
                 return;
             }
+            
+            suppressRealtimeEvents(5000); // Ignore realtime for 5 seconds (bulk operation)
 
             // Get technicians to clear
             let techs = TECHNICIANS;
@@ -3164,6 +3172,8 @@
 
         async function handleConflict(action) {
             closeConflictModal();
+            
+            suppressRealtimeEvents(5000); // Ignore realtime for 5 seconds
 
             const tech = bulkEntryState.techsToProcess[bulkEntryState.currentTechIndex];
             const dayIndex = bulkEntryState.dayIndex;
@@ -3309,6 +3319,8 @@
                 alert('No previous entry found to copy');
                 return;
             }
+            
+            suppressRealtimeEvents(3000); // Ignore realtime for 3 seconds
 
             const date = new Date(currentWeekStart);
             date.setDate(date.getDate() + dayIndex);
@@ -3806,6 +3818,7 @@
         // Real-time sync
         let realtimeUpdateTimeout = null;
         let pendingUpdates = new Map(); // Map of techId-dayIndex -> dateStr
+        let ignoreRealtimeUntil = 0; // Timestamp to ignore realtime events until
 
         function setupRealtimeSync() {
             if (!supabaseClient) return;
@@ -3816,6 +3829,11 @@
                 .on('postgres_changes', 
                     { event: '*', schema: 'public', table: 'technicians' },
                     (payload) => {
+                        // Ignore if we're in the middle of our own changes
+                        if (Date.now() < ignoreRealtimeUntil) {
+                            console.log('Ignoring technician realtime event (local change in progress)');
+                            return;
+                        }
                         console.log('Technicians changed:', payload);
                         handleTechnicianChange(payload);
                     }
@@ -3828,11 +3846,21 @@
                 .on('postgres_changes',
                     { event: '*', schema: 'public', table: 'schedule_entries' },
                     (payload) => {
+                        // Ignore if we're in the middle of our own changes
+                        if (Date.now() < ignoreRealtimeUntil) {
+                            console.log('Ignoring schedule realtime event (local change in progress)');
+                            return;
+                        }
                         console.log('Schedule changed:', payload);
                         queueScheduleUpdate(payload);
                     }
                 )
                 .subscribe();
+        }
+
+        // Call this before making changes to suppress realtime events
+        function suppressRealtimeEvents(durationMs = 2000) {
+            ignoreRealtimeUntil = Date.now() + durationMs;
         }
 
         function queueScheduleUpdate(payload) {
