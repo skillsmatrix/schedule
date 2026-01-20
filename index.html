@@ -5074,28 +5074,52 @@
         }
 
         async function saveTeamChanges() {
+            const saveBtn = document.querySelector('#manageTeamOverlay button[onclick="saveTeamChanges()"]');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+            }
+
             const rows = document.querySelectorAll('#teamTableBody .tech-row');
             const updates = [];
 
             rows.forEach((row, index) => {
                 const techId = row.dataset.techId;
+                const tech = TECHNICIANS.find(t => t.id === techId);
+                if (!tech) return;
+
                 const name = row.querySelector('[data-field="name"]').value.trim();
                 const role = row.querySelector('[data-field="role"]').value;
                 const postcode = row.querySelector('[data-field="postcode"]').value.trim();
                 const lineManager = row.querySelector('[data-field="lineManager"]').value;
                 const workstream = row.querySelector('[data-field="workstream"]').value;
 
-                updates.push({
-                    id: techId,
-                    name,
-                    role,
-                    postcode,
-                    line_manager: lineManager || null,
-                    workstream
-                });
+                // Only add to updates if something changed
+                if (name !== tech.name || 
+                    role !== tech.role || 
+                    postcode !== tech.postcode || 
+                    lineManager !== (tech.lineManager || '') || 
+                    workstream !== tech.workstream) {
+                    
+                    updates.push({
+                        id: techId,
+                        name,
+                        role,
+                        postcode,
+                        line_manager: lineManager || null,
+                        workstream
+                    });
+                }
             });
 
-            // Update each technician
+            if (updates.length === 0) {
+                closeManageTeamModal();
+                showUpdateToast('No changes to save');
+                return;
+            }
+
+            // Update changed technicians
+            let errorOccurred = false;
             for (const update of updates) {
                 const { error } = await supabaseClient
                     .from('technicians')
@@ -5109,14 +5133,24 @@
                     .eq('id', update.id);
 
                 if (error) {
-                    alert('Error updating technician: ' + error.message);
-                    return;
+                    console.error('Error updating technician:', error);
+                    errorOccurred = true;
+                    break;
                 }
+            }
+
+            if (errorOccurred) {
+                alert('Error updating some technicians. Please try again.');
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save Changes';
+                }
+                return;
             }
 
             closeManageTeamModal();
             await loadAllData();
-            showUpdateToast('Team updated');
+            showUpdateToast(`Updated ${updates.length} technician(s)`);
         }
 
         // ==================== MANAGE ROLES MODAL ====================
