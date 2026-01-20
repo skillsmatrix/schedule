@@ -121,7 +121,7 @@
         /* === HEADER === */
         .header {
             background: var(--brand-gradient);
-            padding: 0.75rem 2rem;
+            padding: 1.25rem 2rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -130,9 +130,6 @@
             box-sizing: border-box;
             flex-wrap: wrap;
             gap: 0.75rem;
-            position: sticky;
-            top: 0;
-            z-index: 100;
         }
 
         .logo-section h1 {
@@ -223,9 +220,6 @@
             align-items: center;
             gap: 1rem;
             transition: background 0.3s ease;
-            position: sticky;
-            top: 52px; /* Height of header */
-            z-index: 99;
         }
 
         .filters {
@@ -349,9 +343,6 @@
             gap: 1.5rem;
             align-items: center;
             transition: background 0.3s ease;
-            position: sticky;
-            top: 104px; /* Header (52px) + Toolbar (52px) */
-            z-index: 98;
         }
 
         .legend-label {
@@ -383,14 +374,13 @@
 
         /* === SCHEDULE GRID === */
         .schedule-wrapper {
-            padding: 0 2rem 1.5rem 2rem;
+            padding: 1.5rem 2rem;
         }
 
         .schedule-container {
             background: var(--bg-secondary);
             border-radius: 1rem;
             box-shadow: var(--shadow-lg);
-            overflow: hidden;
             transition: background 0.3s ease;
         }
 
@@ -398,6 +388,7 @@
             display: grid;
             grid-template-columns: 200px repeat(5, 1fr);
             min-width: 1000px;
+            overflow-x: auto;
         }
 
         .schedule-grid.show-weekends {
@@ -416,8 +407,8 @@
             color: #ffffff;
             font-weight: 600;
             position: sticky;
-            top: 140px; /* Header (52px) + Toolbar (52px) + Legend (36px) */
-            z-index: 10;
+            top: 0;
+            z-index: 50;
         }
 
         .grid-header-cell:first-child {
@@ -1289,16 +1280,18 @@
 <body>
     <!-- Header -->
     <header class="header">
-        <div class="header-actions" style="width: 100%; justify-content: space-between;">
+        <div class="logo-section">
+            <h1>Water Business Unit Schedule</h1>
+            <p>Resource deployment & planning</p>
+        </div>
+        <div class="header-actions">
             <div class="week-navigator">
                 <button onclick="changeWeek(-1)" aria-label="Previous week">‹</button>
                 <div class="week-display" id="weekDisplay">Week 49 · December 2025</div>
                 <button onclick="changeWeek(1)" aria-label="Next week">›</button>
             </div>
-            <div style="display: flex; gap: 0.5rem; align-items: center;">
-                <button class="btn-today" onclick="goToToday()">Today</button>
-                <button class="btn-today" id="authBtn" style="background: rgba(255,255,255,0.2); color: white;">🔐 Sign In</button>
-            </div>
+            <button class="btn-today" onclick="goToToday()">Today</button>
+            <button class="btn-today" id="authBtn" style="background: rgba(255,255,255,0.2); color: white;">🔐 Sign In</button>
         </div>
     </header>
 
@@ -1386,7 +1379,7 @@
 
     <!-- Schedule -->
     <div class="schedule-wrapper">
-        <div class="schedule-container" style="overflow-x: auto;">
+        <div class="schedule-container">
             <div class="schedule-grid" id="scheduleGrid">
                 <!-- Rendered by JS -->
             </div>
