@@ -1294,11 +1294,7 @@
         <div class="filters">
             <select class="filter-select" id="workstreamFilter" onchange="renderSchedule()">
                 <option value="all">All Workstreams</option>
-                <option value="Project Delivery">Project Delivery</option>
-                <option value="Clean Water">Clean Water</option>
-                <option value="Waste Water">Waste Water</option>
-                <option value="Contingent Resources">Contingent</option>
-                <option value="Management & Admin">Management</option>
+                <!-- Populated dynamically -->
             </select>
             <select class="filter-select" id="clientFilter" onchange="renderSchedule()">
                 <option value="all">All Clients</option>
@@ -1692,6 +1688,7 @@
             CLIENTS = clients;
             ROLES = roles;
             updateClientDropdowns();
+            updateWorkstreamDropdowns();
             
             TECHNICIANS = buildScheduleData(technicians, entries);
             isLoading = false;
@@ -3003,7 +3000,7 @@
                 box-shadow: 0 20px 40px rgba(0,0,0,0.2);
             `;
 
-            const workstreamOptions = ['all', 'Project Delivery', 'Clean Water', 'Waste Water', 'Contingent Resources', 'Management & Admin']
+            const workstreamOptions = ['all', ...WORKSTREAMS.map(ws => ws.name)]
                 .map(ws => `<option value="${ws}">${ws === 'all' ? 'All Workstreams' : ws}</option>`)
                 .join('');
 
@@ -4609,7 +4606,7 @@
             });
 
             // Group by workstream
-            const workstreams = ['Project Delivery', 'Clean Water', 'Waste Water', 'Contingent Resources', 'Management & Admin'];
+            const workstreams = WORKSTREAMS.map(ws => ws.name);
             const grouped = {};
             workstreams.forEach(ws => grouped[ws] = []);
             techs.forEach(t => {
@@ -5540,6 +5537,8 @@
         }
 
         async function saveWorkstreamsChanges() {
+            suppressRealtimeEvents(5000);
+            
             const rows = document.querySelectorAll('#workstreamsTableBody .ws-row');
             const newWorkstreams = [];
             const renames = [];
@@ -5567,8 +5566,8 @@
                     .eq('workstream', rename.from);
             }
 
-            // Update local WORKSTREAMS array
-            WORKSTREAMS = newWorkstreams;
+            // Update local WORKSTREAMS array (sorted by rank)
+            WORKSTREAMS = newWorkstreams.sort((a, b) => a.rank - b.rank);
             
             // Update workstream filter dropdown
             updateWorkstreamDropdowns();
