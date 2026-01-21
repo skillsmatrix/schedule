@@ -1275,6 +1275,15 @@
                 opacity: 0;
             }
         }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1285,6 +1294,19 @@
             <p>Resource deployment & planning</p>
         </div>
         <div class="header-actions">
+            <div id="onlineUsers" style="
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                background: rgba(255,255,255,0.15);
+                padding: 0.375rem 0.75rem;
+                border-radius: 0.5rem;
+                font-size: 0.75rem;
+                color: white;
+            ">
+                <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; animation: pulse 2s infinite;"></span>
+                <span id="onlineCount">1 online</span>
+            </div>
             <div class="week-navigator">
                 <button onclick="changeWeek(-1)" aria-label="Previous week">‹</button>
                 <div class="week-display" id="weekDisplay">Week 49 · December 2025</div>
@@ -4294,6 +4316,7 @@
         let pendingUpdates = new Map(); // Map of techId-dateStr -> update info
         let ignoreRealtimeUntil = 0; // Timestamp to ignore realtime events until
         let broadcastChannel = null; // For broadcasting cell updates
+        let presenceChannel = null; // For tracking online users
 
         function setupRealtimeSync() {
             if (!supabaseClient) return;
@@ -4345,6 +4368,88 @@
                     handleCellRefreshBroadcast(payload.payload);
                 })
                 .subscribe();
+
+            // Setup presence tracking for online users
+            setupPresenceTracking();
+        }
+
+        function setupPresenceTracking() {
+            if (!supabaseClient) return;
+
+            const uniqueId = 'user_' + Math.random().toString(36).substr(2, 9);
+            
+            presenceChannel = supabaseClient.channel('online-users', {
+                config: {
+                    presence: {
+                        key: uniqueId
+                    }
+                }
+            });
+
+            presenceChannel
+                .on('presence', { event: 'sync' }, () => {
+                    updateOnlineUsersDisplay();
+                })
+                .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+                    console.log('User joined:', key);
+                    updateOnlineUsersDisplay();
+                })
+                .on('presence', { event: 'leave' }, ({ key, leftPresences }) => {
+                    console.log('User left:', key);
+                    updateOnlineUsersDisplay();
+                })
+                .subscribe(async (status) => {
+                    if (status === 'SUBSCRIBED') {
+                        // Track this user
+                        await presenceChannel.track({
+                            user: currentUser?.email?.split('@')[0] || null,
+                            online_at: new Date().toISOString()
+                        });
+                    }
+                });
+        }
+
+        function updateOnlineUsersDisplay() {
+            if (!presenceChannel) return;
+
+            const presenceState = presenceChannel.presenceState();
+            const allUsers = Object.values(presenceState).flat();
+            
+            const loggedInUsers = allUsers.filter(u => u.user);
+            const guests = allUsers.filter(u => !u.user);
+
+            const onlineCountEl = document.getElementById('onlineCount');
+            if (!onlineCountEl) return;
+
+            let text = '';
+            if (loggedInUsers.length > 0) {
+                const names = loggedInUsers.map(u => u.user).slice(0, 3);
+                if (loggedInUsers.length <= 3) {
+                    text = names.join(', ');
+                } else {
+                    text = names.join(', ') + ` +${loggedInUsers.length - 3}`;
+                }
+                if (guests.length > 0) {
+                    text += ` · +${guests.length} guest${guests.length > 1 ? 's' : ''}`;
+                }
+            } else {
+                text = `${allUsers.length} online`;
+                if (guests.length > 0 && allUsers.length > 1) {
+                    text = `${guests.length} guest${guests.length > 1 ? 's' : ''}`;
+                }
+            }
+
+            onlineCountEl.textContent = text || '1 online';
+        }
+
+        // Update presence when user logs in/out
+        async function updatePresenceUser() {
+            if (presenceChannel) {
+                await presenceChannel.track({
+                    user: currentUser?.email?.split('@')[0] || null,
+                    online_at: new Date().toISOString()
+                });
+            }
         }
 
         // Broadcast which cells need refreshing (called after deletes)
@@ -5884,6 +5989,7 @@
                     supabaseClient.auth.onAuthStateChange((event, session) => {
                         currentUser = session?.user || null;
                         updateAuthUI();
+                        updatePresenceUser(); // Update presence when auth changes
                     });
 
                     // Setup real-time sync
