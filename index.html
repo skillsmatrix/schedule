@@ -381,8 +381,9 @@
             background: var(--bg-secondary);
             border-radius: 1rem;
             box-shadow: var(--shadow-lg);
-            overflow: hidden;
+            overflow: auto;
             transition: background 0.3s ease;
+            max-height: calc(100vh - 220px);
         }
 
         .schedule-grid {
@@ -1401,7 +1402,7 @@
 
     <!-- Schedule -->
     <div class="schedule-wrapper">
-        <div class="schedule-container" style="overflow-x: auto;">
+        <div class="schedule-container">
             <div class="schedule-grid" id="scheduleGrid">
                 <!-- Rendered by JS -->
             </div>
