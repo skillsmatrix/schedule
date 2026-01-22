@@ -6427,9 +6427,9 @@
                             <div style="font-size: 2rem; font-weight: 700; color: #6366f1;">${stats.nightJobs}</div>
                             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Night Shifts</div>
                         </div>
-                        <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem; text-align: center;">
+                        <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem; text-align: center; cursor: help; position: relative;" title="${stats.daysWithWork} tech-days with work out of ${stats.totalPossibleDays} possible (${TECHNICIANS.length} technicians × 5 weekdays). Counts days where a technician has a job or work status (office, training, travel, WFH).">
                             <div style="font-size: 2rem; font-weight: 700; color: var(--text-primary);">${stats.utilisation}%</div>
-                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Utilisation</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Utilisation <span style="font-size: 0.625rem; opacity: 0.7;">ⓘ</span></div>
                         </div>
                     </div>
 
@@ -6634,6 +6634,8 @@
                 inactiveJobs,
                 nightJobs,
                 utilisation,
+                daysWithWork,
+                totalPossibleDays,
                 byWorkstream,
                 byClient,
                 byTechnician,
