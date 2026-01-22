@@ -6382,51 +6382,87 @@
             let inactiveJobs = 0;
             let nightJobs = 0;
             let daysWithWork = 0;
-            let totalPossibleDays = 0;
 
             const byWorkstream = {};
             const byClient = {};
             const byTechnician = {};
             const byDay = { Mon: 0, Tue: 0, Wed: 0, Thu: 0, Fri: 0, Sat: 0, Sun: 0 };
-            const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+            // Initialize technician data
             TECHNICIANS.forEach(tech => {
                 byTechnician[tech.name] = { jobs: 0, workstream: tech.workstream };
-                
                 if (!byWorkstream[tech.workstream]) {
                     byWorkstream[tech.workstream] = 0;
                 }
-
-                tech.schedule.forEach((day, dayIndex) => {
-                    totalPossibleDays++;
-                    
-                    if (day?.jobs && day.jobs.length > 0) {
-                        daysWithWork++;
-                        day.jobs.forEach(job => {
-                            totalJobs++;
-                            byTechnician[tech.name].jobs++;
-                            byWorkstream[tech.workstream]++;
-                            byDay[dayNames[dayIndex]]++;
-
-                            if (job.client) {
-                                byClient[job.client] = (byClient[job.client] || 0) + 1;
-                            }
-
-                            if (job.isNight) nightJobs++;
-                            if (job.jobStatus === 'live') liveJobs++;
-                            else if (job.jobStatus === 'pending') pendingJobs++;
-                            else if (job.jobStatus === 'inactive') inactiveJobs++;
-                        });
-                    } else if (day?.status) {
-                        // Count statuses that indicate work
-                        const workStatuses = ['office', 'training', 'travel'];
-                        if (workStatuses.includes(day.status)) {
-                            daysWithWork++;
-                        }
-                    }
-                });
             });
 
+            // Calculate current week date range
+            const weekStart = new Date(currentWeekStart);
+            const weekEnd = new Date(currentWeekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+
+            // Track unique tech-days with work
+            const techDaysWithWork = new Set();
+
+            // Process schedule entries for current week
+            SCHEDULE_ENTRIES.forEach(entry => {
+                const entryDate = new Date(entry.date);
+                
+                // Check if entry is in current week
+                if (entryDate >= weekStart && entryDate <= weekEnd) {
+                    const tech = TECHNICIANS.find(t => t.id === entry.technician_id);
+                    if (!tech) return;
+
+                    const dayName = dayNames[entryDate.getDay()];
+                    const techDayKey = `${entry.technician_id}-${entry.date}`;
+
+                    // If it's a job (has q_number or client)
+                    if (entry.q_number || entry.client) {
+                        totalJobs++;
+                        techDaysWithWork.add(techDayKey);
+                        
+                        if (byTechnician[tech.name]) {
+                            byTechnician[tech.name].jobs++;
+                        }
+                        
+                        if (byWorkstream[tech.workstream] !== undefined) {
+                            byWorkstream[tech.workstream]++;
+                        }
+
+                        // Map day index correctly (Mon = 1, Sun = 0 in JS)
+                        const dayIndex = entryDate.getDay();
+                        const chartDayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                        const chartDay = chartDayNames[dayIndex];
+                        if (chartDay === 'Sun') byDay.Sun++;
+                        else if (chartDay === 'Mon') byDay.Mon++;
+                        else if (chartDay === 'Tue') byDay.Tue++;
+                        else if (chartDay === 'Wed') byDay.Wed++;
+                        else if (chartDay === 'Thu') byDay.Thu++;
+                        else if (chartDay === 'Fri') byDay.Fri++;
+                        else if (chartDay === 'Sat') byDay.Sat++;
+
+                        if (entry.client) {
+                            byClient[entry.client] = (byClient[entry.client] || 0) + 1;
+                        }
+
+                        if (entry.is_night) nightJobs++;
+                        if (entry.job_status === 'live') liveJobs++;
+                        else if (entry.job_status === 'pending') pendingJobs++;
+                        else if (entry.job_status === 'inactive') inactiveJobs++;
+                    } 
+                    // If it's a work status (office, training, travel)
+                    else if (entry.status) {
+                        const workStatuses = ['office', 'training', 'travel'];
+                        if (workStatuses.includes(entry.status)) {
+                            techDaysWithWork.add(techDayKey);
+                        }
+                    }
+                }
+            });
+
+            daysWithWork = techDaysWithWork.size;
+            const totalPossibleDays = TECHNICIANS.length * 5; // 5 working days
             const utilisation = totalPossibleDays > 0 
                 ? Math.round((daysWithWork / totalPossibleDays) * 100) 
                 : 0;
