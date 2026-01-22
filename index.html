@@ -1714,6 +1714,7 @@
                     sort_order: tech.sort_order,
                     first_day: tech.first_day,
                     end_date: tech.end_date,
+                    notes: tech.notes,
                     schedule
                 };
             });
@@ -2398,6 +2399,22 @@
                     <p style="margin: -1rem 0 1.5rem 0; font-size: 0.6875rem; color: var(--text-muted);">
                         First Day: Technician appears from this week with "First Day" status. End Date: Technician hidden after this date.
                     </p>
+                    <div style="margin-bottom: 1.5rem;">
+                        <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Notes</label>
+                        <textarea id="techNotes" placeholder="Training, certifications, general info..." style="
+                            width: 100%;
+                            padding: 0.625rem 0.75rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            font-size: 0.875rem;
+                            font-family: inherit;
+                            background: var(--bg-secondary);
+                            color: var(--text-primary);
+                            box-sizing: border-box;
+                            min-height: 80px;
+                            resize: vertical;
+                        ">${tech?.notes || ''}</textarea>
+                    </div>
                     <div style="display: flex; gap: 0.75rem;">
                         ${isEdit ? `<button type="button" onclick="deleteTechnician('${tech.id}')" style="
                             padding: 0.625rem 1rem;
@@ -2484,6 +2501,7 @@
         async function saveTechnician(techId = null) {
             const firstDay = document.getElementById('techFirstDay').value;
             const endDate = document.getElementById('techEndDate').value;
+            const notes = document.getElementById('techNotes').value;
             
             const techData = {
                 name: document.getElementById('techName').value,
@@ -2492,7 +2510,8 @@
                 line_manager: document.getElementById('techManager').value,
                 workstream: document.getElementById('techWorkstream').value,
                 first_day: firstDay || null,
-                end_date: endDate || null
+                end_date: endDate || null,
+                notes: notes || null
             };
 
             let error;
@@ -3315,7 +3334,157 @@
             const job = tech.schedule[dayIndex]?.jobs?.[jobIndex];
             if (!job) return;
             
-            if (!confirm(`Delete this job?\n\nQ: ${job.q}\nLocation: ${job.location}`)) return;
+            // Show delete confirmation modal with reason
+            showDeleteJobModal(techId, dayIndex, jobIndex, job, tech);
+        }
+
+        function showDeleteJobModal(techId, dayIndex, jobIndex, job, tech) {
+            const overlay = document.createElement('div');
+            overlay.id = 'deleteJobOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 250;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                padding: 2rem;
+                width: 90%;
+                max-width: 400px;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            `;
+
+            modal.innerHTML = `
+                <h2 style="margin: 0 0 0.5rem 0; font-size: 1.25rem; color: var(--text-primary);">🗑️ Delete Job</h2>
+                <p style="margin: 0 0 1.5rem 0; font-size: 0.875rem; color: var(--text-muted);">
+                    <strong style="color: var(--brand-primary);">${job.q || 'Job'}</strong> · ${job.location || 'No location'}<br>
+                    ${tech.name}
+                </p>
+                
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.5rem;">Was this job canceled?</label>
+                    <div style="display: flex; gap: 0.5rem;">
+                        <label style="
+                            flex: 1;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 0.5rem;
+                            padding: 0.625rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            cursor: pointer;
+                            background: var(--bg-tertiary);
+                        " id="cancelYesLabel">
+                            <input type="radio" name="wasCanceled" value="yes" style="margin: 0;">
+                            <span style="font-size: 0.875rem;">Yes, canceled</span>
+                        </label>
+                        <label style="
+                            flex: 1;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 0.5rem;
+                            padding: 0.625rem;
+                            border: 1px solid var(--border-color);
+                            border-radius: 0.5rem;
+                            cursor: pointer;
+                            background: var(--bg-tertiary);
+                        " id="cancelNoLabel">
+                            <input type="radio" name="wasCanceled" value="no" checked style="margin: 0;">
+                            <span style="font-size: 0.875rem;">No</span>
+                        </label>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Reason / Notes <span style="color: var(--text-muted);">(required)</span></label>
+                    <textarea id="deleteJobNotes" required placeholder="Why is this job being deleted?" style="
+                        width: 100%;
+                        padding: 0.625rem 0.75rem;
+                        border: 1px solid var(--border-color);
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-family: inherit;
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                        box-sizing: border-box;
+                        min-height: 80px;
+                        resize: vertical;
+                    "></textarea>
+                </div>
+                
+                <div style="display: flex; gap: 0.75rem;">
+                    <button onclick="closeDeleteJobModal()" style="
+                        flex: 1;
+                        padding: 0.625rem 1rem;
+                        border: 1px solid var(--border-color);
+                        background: var(--bg-secondary);
+                        color: var(--text-primary);
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-weight: 500;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Cancel</button>
+                    <button onclick="executeDeleteJob('${techId}', ${dayIndex}, ${jobIndex})" id="confirmDeleteBtn" style="
+                        flex: 1;
+                        padding: 0.625rem 1rem;
+                        border: 1px solid #f43f5e;
+                        background: rgba(244, 63, 94, 0.1);
+                        color: #f43f5e;
+                        border-radius: 0.5rem;
+                        font-size: 0.875rem;
+                        font-weight: 600;
+                        cursor: pointer;
+                        font-family: inherit;
+                    ">Delete Job</button>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            // Focus on notes field
+            document.getElementById('deleteJobNotes').focus();
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeDeleteJobModal();
+            };
+        }
+
+        function closeDeleteJobModal() {
+            const overlay = document.getElementById('deleteJobOverlay');
+            if (overlay) overlay.remove();
+        }
+
+        async function executeDeleteJob(techId, dayIndex, jobIndex) {
+            const notes = document.getElementById('deleteJobNotes').value.trim();
+            if (!notes) {
+                alert('Please enter a reason for deleting this job.');
+                document.getElementById('deleteJobNotes').focus();
+                return;
+            }
+
+            const wasCanceled = document.querySelector('input[name="wasCanceled"]:checked').value === 'yes';
+            
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (!tech) return;
+            
+            const job = tech.schedule[dayIndex]?.jobs?.[jobIndex];
+            if (!job) return;
+
+            const btn = document.getElementById('confirmDeleteBtn');
+            btn.disabled = true;
+            btn.textContent = 'Deleting...';
             
             suppressRealtimeEvents(3000);
             
@@ -3323,55 +3492,84 @@
             date.setDate(date.getDate() + dayIndex);
             const dateStr = toLocalDateString(date);
             
-            // Delete this specific job by matching its fields
-            const { error } = await supabaseClient
-                .from('schedule_entries')
-                .delete()
-                .eq('technician_id', techId)
-                .eq('date', dateStr)
-                .eq('q_number', job.q)
-                .eq('location', job.location);
-            
-            if (error) {
-                alert('Error deleting job: ' + error.message);
-                return;
-            }
-            
-            // If job had a partner, delete their linked entry too
-            if (job.partner) {
-                const partnerTech = TECHNICIANS.find(t => t.name === job.partner);
-                if (partnerTech) {
-                    await supabaseClient
-                        .from('schedule_entries')
-                        .delete()
-                        .eq('technician_id', partnerTech.id)
-                        .eq('date', dateStr)
-                        .eq('partner', tech.name)
-                        .eq('q_number', job.q);
-                    
-                    // Update partner cell
-                    await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
-                    updateCell(partnerTech, dayIndex);
-                    
-                    // Broadcast to other users
-                    broadcastCellRefresh([
-                        { techId: techId, dateStr: dateStr },
-                        { techId: partnerTech.id, dateStr: dateStr }
-                    ]);
+            try {
+                // Log to audit table first
+                await supabaseClient
+                    .from('audit_log')
+                    .insert([{
+                        action: 'job_deleted',
+                        technician_id: techId,
+                        technician_name: tech.name,
+                        date: dateStr,
+                        job_details: {
+                            q_number: job.q,
+                            client: job.client,
+                            location: job.location,
+                            task: job.task,
+                            partner: job.partner,
+                            is_night: job.isNight,
+                            job_status: job.jobStatus
+                        },
+                        was_canceled: wasCanceled,
+                        notes: notes,
+                        performed_by: currentUser?.email
+                    }]);
+
+                // Delete this specific job by matching its fields
+                const { error } = await supabaseClient
+                    .from('schedule_entries')
+                    .delete()
+                    .eq('technician_id', techId)
+                    .eq('date', dateStr)
+                    .eq('q_number', job.q)
+                    .eq('location', job.location);
+                
+                if (error) throw error;
+                
+                // If job had a partner, delete their linked entry too
+                if (job.partner) {
+                    const partnerTech = TECHNICIANS.find(t => t.name === job.partner);
+                    if (partnerTech) {
+                        await supabaseClient
+                            .from('schedule_entries')
+                            .delete()
+                            .eq('technician_id', partnerTech.id)
+                            .eq('date', dateStr)
+                            .eq('partner', tech.name)
+                            .eq('q_number', job.q);
+                        
+                        // Update partner cell
+                        await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
+                        updateCell(partnerTech, dayIndex);
+                        
+                        // Broadcast to other users
+                        broadcastCellRefresh([
+                            { techId: techId, dateStr: dateStr },
+                            { techId: partnerTech.id, dateStr: dateStr }
+                        ]);
+                    } else {
+                        broadcastCellRefresh([{ techId: techId, dateStr: dateStr }]);
+                    }
                 } else {
                     broadcastCellRefresh([{ techId: techId, dateStr: dateStr }]);
                 }
-            } else {
-                broadcastCellRefresh([{ techId: techId, dateStr: dateStr }]);
+                
+                closeDeleteJobModal();
+                
+                // Update main tech cell
+                await reloadTechnicianDay(tech, dayIndex, dateStr);
+                updateCell(tech, dayIndex);
+                
+                // Refresh the panel to show updated job list
+                openPanel(techId, dayIndex);
+                showUpdateToast(wasCanceled ? 'Job canceled and logged' : 'Job deleted and logged');
+                
+            } catch (err) {
+                console.error('Error deleting job:', err);
+                alert('Error deleting job: ' + err.message);
+                btn.disabled = false;
+                btn.textContent = 'Delete Job';
             }
-            
-            // Update main tech cell
-            await reloadTechnicianDay(tech, dayIndex, dateStr);
-            updateCell(tech, dayIndex);
-            
-            // Refresh the panel to show updated job list
-            openPanel(techId, dayIndex);
-            showUpdateToast('Job deleted');
         }
 
         // ==================== BULK ENTRY ====================
@@ -5397,11 +5595,18 @@
                             <div class="panel-value">${tech.lineManager || '—'}</div>
                         </div>
                     </div>
+                    ${tech.notes ? `
+                    <div class="panel-section">
+                        <div class="panel-section-title">Notes</div>
+                        <div style="font-size: 0.8125rem; color: var(--text-secondary); white-space: pre-wrap; line-height: 1.5;">${tech.notes}</div>
+                    </div>
+                    ` : ''}
                 `;
 
                 // Footer for technician view
                 if (currentUser) {
                     footer.innerHTML = `
+                        <button class="panel-btn panel-btn-secondary" onclick="showTechHistoryModal('${tech.id}')">📋 History</button>
                         <button class="panel-btn panel-btn-primary" onclick="showEditTechnicianModal('${tech.id}')">Edit Technician</button>
                     `;
                 } else {
@@ -5418,6 +5623,141 @@
         function closePanel() {
             document.getElementById('sidePanel').classList.remove('open');
             document.getElementById('panelOverlay').classList.remove('open');
+        }
+
+        // ==================== AUDIT HISTORY MODAL ====================
+
+        async function showTechHistoryModal(techId) {
+            const tech = TECHNICIANS.find(t => t.id === techId);
+            if (!tech) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'historyOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 1rem;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                width: 100%;
+                max-width: 500px;
+                max-height: 80vh;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            `;
+
+            modal.innerHTML = `
+                <div style="padding: 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h2 style="margin: 0; font-size: 1.25rem; color: var(--text-primary);">📋 Job History</h2>
+                        <p style="margin: 0.25rem 0 0 0; font-size: 0.8125rem; color: var(--text-muted);">${tech.name} · Last 3 months</p>
+                    </div>
+                    <button onclick="closeHistoryModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted); padding: 0.5rem;">&times;</button>
+                </div>
+                <div id="historyContent" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+                    <div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+                        <div>Loading history...</div>
+                    </div>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            overlay.onclick = (e) => {
+                if (e.target === overlay) closeHistoryModal();
+            };
+
+            // Fetch audit log for this technician
+            try {
+                const threeMonthsAgo = new Date();
+                threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+                const { data: logs, error } = await supabaseClient
+                    .from('audit_log')
+                    .select('*')
+                    .eq('technician_id', techId)
+                    .gte('created_at', threeMonthsAgo.toISOString())
+                    .order('created_at', { ascending: false });
+
+                const content = document.getElementById('historyContent');
+
+                if (error) {
+                    content.innerHTML = `<div style="color: #ef4444; padding: 1rem;">Error loading history: ${error.message}</div>`;
+                    return;
+                }
+
+                if (!logs || logs.length === 0) {
+                    content.innerHTML = `
+                        <div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">✨</div>
+                            <div>No deleted or moved jobs in the last 3 months</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                content.innerHTML = logs.map(log => {
+                    const date = new Date(log.created_at);
+                    const formattedDate = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                    const formattedTime = date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+                    const jobDate = log.date ? new Date(log.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+                    const details = log.job_details || {};
+
+                    if (log.action === 'job_deleted') {
+                        return `
+                            <div style="padding: 1rem; background: var(--bg-tertiary); border-radius: 0.5rem; margin-bottom: 0.75rem; border-left: 3px solid ${log.was_canceled ? '#f59e0b' : '#ef4444'};">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                                    <span style="font-size: 0.75rem; font-weight: 600; color: ${log.was_canceled ? '#f59e0b' : '#ef4444'};">
+                                        ${log.was_canceled ? '⚠️ Job Canceled' : '🗑️ Job Deleted'}
+                                    </span>
+                                    <span style="font-size: 0.6875rem; color: var(--text-muted);">${formattedDate} ${formattedTime}</span>
+                                </div>
+                                <div style="font-size: 0.8125rem; color: var(--text-primary); font-weight: 500;">${details.q_number || 'No Q'} · ${jobDate}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">${details.client || ''} · ${details.location || ''}</div>
+                                ${log.notes ? `<div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid var(--border-color);"><em>"${log.notes}"</em></div>` : ''}
+                                <div style="font-size: 0.6875rem; color: var(--text-muted); margin-top: 0.5rem;">By: ${log.performed_by || 'Unknown'}</div>
+                            </div>
+                        `;
+                    } else if (log.action === 'job_moved') {
+                        const movedToDate = log.moved_to_date ? new Date(log.moved_to_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '';
+                        return `
+                            <div style="padding: 1rem; background: var(--bg-tertiary); border-radius: 0.5rem; margin-bottom: 0.75rem; border-left: 3px solid #3b82f6;">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                                    <span style="font-size: 0.75rem; font-weight: 600; color: #3b82f6;">📦 Job Moved</span>
+                                    <span style="font-size: 0.6875rem; color: var(--text-muted);">${formattedDate} ${formattedTime}</span>
+                                </div>
+                                <div style="font-size: 0.8125rem; color: var(--text-primary); font-weight: 500;">${details.q_number || 'No Q'} · ${jobDate}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem;">${details.client || ''} · ${details.location || ''}</div>
+                                <div style="font-size: 0.75rem; color: #3b82f6; margin-top: 0.5rem;">→ Moved to ${log.moved_to_tech_name || 'Unknown'} (${movedToDate})</div>
+                                <div style="font-size: 0.6875rem; color: var(--text-muted); margin-top: 0.5rem;">By: ${log.performed_by || 'Unknown'}</div>
+                            </div>
+                        `;
+                    }
+                    return '';
+                }).join('');
+
+            } catch (err) {
+                console.error('Error loading history:', err);
+                document.getElementById('historyContent').innerHTML = `<div style="color: #ef4444; padding: 1rem;">Error loading history</div>`;
+            }
+        }
+
+        function closeHistoryModal() {
+            const overlay = document.getElementById('historyOverlay');
+            if (overlay) overlay.remove();
         }
 
         // ==================== MANAGE TEAM MODAL ====================
@@ -6996,9 +7336,38 @@
             targetDate.setDate(targetDate.getDate() + targetDayIndex);
             const dateStr = toLocalDateString(targetDate);
 
+            const sourceTech = TECHNICIANS.find(t => t.id === dragData.sourceTechId);
+            const targetTech = TECHNICIANS.find(t => t.id === targetTechId);
+            const job = dragData.job;
+
             suppressRealtimeEvents(5000);
 
             try {
+                // Log to audit table
+                await supabaseClient
+                    .from('audit_log')
+                    .insert([{
+                        action: 'job_moved',
+                        technician_id: dragData.sourceTechId,
+                        technician_name: sourceTech?.name,
+                        date: sourceDateStr,
+                        job_details: {
+                            q_number: job.q,
+                            client: job.client,
+                            location: job.location,
+                            task: job.task,
+                            partner: job.partner,
+                            is_night: job.isNight,
+                            job_status: job.jobStatus
+                        },
+                        was_canceled: false,
+                        notes: `Moved to ${targetTech?.name}`,
+                        moved_to_tech_id: targetTechId,
+                        moved_to_tech_name: targetTech?.name,
+                        moved_to_date: dateStr,
+                        performed_by: currentUser?.email
+                    }]);
+
                 // Update the entry to new technician and date
                 const { error } = await supabaseClient
                     .from('schedule_entries')
@@ -7011,9 +7380,6 @@
                 if (error) throw error;
 
                 // Refresh source and target cells locally
-                const sourceTech = TECHNICIANS.find(t => t.id === dragData.sourceTechId);
-                const targetTech = TECHNICIANS.find(t => t.id === targetTechId);
-                
                 if (sourceTech) {
                     await reloadTechnicianDay(sourceTech, dragData.sourceDayIndex, sourceDateStr);
                     updateCell(sourceTech, dragData.sourceDayIndex);
