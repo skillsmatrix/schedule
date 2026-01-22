@@ -532,6 +532,11 @@
             background: var(--slate-100) !important;
         }
 
+        .day-cell.drag-over {
+            background: rgba(233, 19, 136, 0.15) !important;
+            box-shadow: inset 0 0 0 2px var(--brand-primary);
+        }
+
         /* Real-time update highlight */
         .day-cell.cell-updated {
             animation: cellHighlight 1.5s ease-out;
@@ -1684,6 +1689,7 @@
                                     schedule[dayIndex] = { jobs: [] };
                                 }
                                 schedule[dayIndex].jobs.push({
+                                    entryId: entry.id,
                                     q: entry.q_number,
                                     client: entry.client,
                                     location: entry.location,
@@ -4698,6 +4704,7 @@
                         tech.schedule[dayIndex] = { jobs: [] };
                     }
                     tech.schedule[dayIndex].jobs.push({
+                        entryId: entry.id,
                         q: entry.q_number,
                         client: entry.client,
                         location: entry.location,
