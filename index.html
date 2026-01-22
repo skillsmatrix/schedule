@@ -6769,6 +6769,11 @@
 
             closeMoveOrDuplicatePopup();
 
+            // Calculate source date
+            const sourceDate = new Date(currentWeekStart);
+            sourceDate.setDate(sourceDate.getDate() + dragData.sourceDayIndex);
+            const sourceDateStr = toLocalDateString(sourceDate);
+
             // Calculate target date
             const targetDate = new Date(currentWeekStart);
             targetDate.setDate(targetDate.getDate() + targetDayIndex);
@@ -6787,6 +6792,12 @@
                     .eq('id', dragData.entryId);
 
                 if (error) throw error;
+
+                // Broadcast cell refresh for both source and target cells
+                await broadcastCellRefresh([
+                    { techId: dragData.sourceTechId, dateStr: sourceDateStr },
+                    { techId: targetTechId, dateStr: dateStr }
+                ]);
 
                 await loadAllData();
                 const targetTech = TECHNICIANS.find(t => t.id === targetTechId);
@@ -6813,12 +6824,15 @@
 
             const job = dragData.job;
 
+            suppressRealtimeEvents(5000);
+
             try {
                 const { error } = await supabaseClient
                     .from('schedule_entries')
                     .insert({
                         technician_id: targetTechId,
                         date: dateStr,
+                        entry_type: 'job',
                         q_number: job.q,
                         client: job.client,
                         location: job.location,
@@ -6830,6 +6844,11 @@
                     });
 
                 if (error) throw error;
+
+                // Broadcast cell refresh for target cell
+                await broadcastCellRefresh([
+                    { techId: targetTechId, dateStr: dateStr }
+                ]);
 
                 await loadAllData();
                 const targetTech = TECHNICIANS.find(t => t.id === targetTechId);
