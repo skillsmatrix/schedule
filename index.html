@@ -1537,6 +1537,23 @@
             'Assistant Technician'
         ];
 
+        // Helper function to setup modal close on overlay click
+        // Only closes if both mousedown AND mouseup happen on the overlay (not dragged from inside)
+        function setupModalClose(overlay, closeFunction) {
+            let mouseDownOnOverlay = false;
+            
+            overlay.addEventListener('mousedown', (e) => {
+                mouseDownOnOverlay = (e.target === overlay);
+            });
+            
+            overlay.addEventListener('mouseup', (e) => {
+                if (mouseDownOnOverlay && e.target === overlay) {
+                    closeFunction();
+                }
+                mouseDownOnOverlay = false;
+            });
+        }
+
         // Load clients from Supabase
         async function loadClients() {
             if (!supabaseClient) return DEFAULT_CLIENTS;
@@ -2039,9 +2056,7 @@
                 await handleChangePassword();
             };
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeChangePasswordModal();
-            };
+            setupModalClose(overlay, closeChangePasswordModal);
         }
 
         function closeChangePasswordModal() {
@@ -2217,9 +2232,7 @@
             };
 
             // Close on overlay click
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeLoginModal();
-            };
+            setupModalClose(overlay, closeLoginModal);
 
             // Close on Escape
             document.addEventListener('keydown', handleLoginEscape);
@@ -2476,9 +2489,7 @@
                 await saveTechnician(tech?.id);
             };
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeTechModal();
-            };
+            setupModalClose(overlay, closeTechModal);
         }
 
         function closeTechModal() {
@@ -2928,8 +2939,12 @@
                 await saveEntry();
             };
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) {
+            let mouseDownOnOverlay = false;
+            overlay.addEventListener('mousedown', (e) => {
+                mouseDownOnOverlay = (e.target === overlay);
+            });
+            overlay.addEventListener('mouseup', (e) => {
+                if (mouseDownOnOverlay && e.target === overlay) {
                     if (hasUnsavedEntryChanges()) {
                         if (confirm('You have unsaved changes. Are you sure you want to close?')) {
                             closeEntryModal();
@@ -2938,7 +2953,8 @@
                         closeEntryModal();
                     }
                 }
-            };
+                mouseDownOnOverlay = false;
+            });
         }
 
         function hasUnsavedEntryChanges() {
@@ -3468,9 +3484,7 @@
             // Focus on notes field
             document.getElementById('deleteJobNotes').focus();
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeDeleteJobModal();
-            };
+            setupModalClose(overlay, closeDeleteJobModal);
         }
 
         function closeDeleteJobModal() {
@@ -3542,6 +3556,28 @@
                 if (job.partner) {
                     const partnerTech = TECHNICIANS.find(t => t.name === job.partner);
                     if (partnerTech) {
+                        // Log to audit table for partner too
+                        await supabaseClient
+                            .from('audit_log')
+                            .insert([{
+                                action: 'job_deleted',
+                                technician_id: partnerTech.id,
+                                technician_name: partnerTech.name,
+                                date: dateStr,
+                                job_details: {
+                                    q_number: job.q,
+                                    client: job.client,
+                                    location: job.location,
+                                    task: job.task,
+                                    partner: tech.name,
+                                    is_night: job.isNight,
+                                    job_status: job.jobStatus
+                                },
+                                was_canceled: wasCanceled,
+                                notes: notes + ` (deleted via ${tech.name})`,
+                                performed_by: currentUser?.email
+                            }]);
+
                         await supabaseClient
                             .from('schedule_entries')
                             .delete()
@@ -3740,9 +3776,7 @@
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeBulkEntryModal();
-            };
+            setupModalClose(overlay, closeBulkEntryModal);
         }
 
         function closeBulkEntryModal() {
@@ -4382,9 +4416,7 @@
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeCSVModal();
-            };
+            setupModalClose(overlay, closeCSVModal);
         }
 
         function closeCSVModal() {
@@ -5688,9 +5720,7 @@
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeHistoryModal();
-            };
+            setupModalClose(overlay, closeHistoryModal);
 
             // Fetch audit log for this technician
             try {
@@ -5799,12 +5829,6 @@
                 box-shadow: 0 20px 40px rgba(0,0,0,0.2);
             `;
 
-            // Build technician filter options
-            const techOptions = TECHNICIANS
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map(t => `<option value="${t.id}">${t.name}</option>`)
-                .join('');
-
             modal.innerHTML = `
                 <div style="padding: 1.5rem; border-bottom: 1px solid var(--border-color);">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
@@ -5815,7 +5839,7 @@
                         <button onclick="closeGlobalAuditModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted); padding: 0.5rem;">&times;</button>
                     </div>
                     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-                        <select id="auditTechFilter" onchange="filterGlobalAudit()" style="
+                        <input type="text" id="auditSearchFilter" oninput="filterGlobalAudit()" placeholder="Search name, Q number, client, location..." style="
                             padding: 0.5rem 0.75rem;
                             border: 1px solid var(--border-color);
                             border-radius: 0.5rem;
@@ -5823,11 +5847,9 @@
                             font-family: inherit;
                             background: var(--bg-secondary);
                             color: var(--text-primary);
-                            min-width: 150px;
+                            flex: 1;
+                            min-width: 200px;
                         ">
-                            <option value="all">All Technicians</option>
-                            ${techOptions}
-                        </select>
                         <select id="auditActionFilter" onchange="filterGlobalAudit()" style="
                             padding: 0.5rem 0.75rem;
                             border: 1px solid var(--border-color);
@@ -5855,9 +5877,7 @@
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeGlobalAuditModal();
-            };
+            setupModalClose(overlay, closeGlobalAuditModal);
 
             // Load audit data
             await loadGlobalAuditData();
@@ -5892,14 +5912,30 @@
         }
 
         function filterGlobalAudit() {
-            const techFilter = document.getElementById('auditTechFilter').value;
+            const searchFilter = document.getElementById('auditSearchFilter').value.toLowerCase().trim();
             const actionFilter = document.getElementById('auditActionFilter').value;
             const content = document.getElementById('globalAuditContent');
 
             let filtered = globalAuditData;
 
-            if (techFilter !== 'all') {
-                filtered = filtered.filter(log => log.technician_id === techFilter);
+            // Search filter - searches across multiple fields
+            if (searchFilter) {
+                filtered = filtered.filter(log => {
+                    const details = log.job_details || {};
+                    const searchFields = [
+                        log.technician_name,
+                        log.moved_to_tech_name,
+                        details.q_number,
+                        details.client,
+                        details.location,
+                        details.task,
+                        log.notes,
+                        log.date,
+                        log.performed_by
+                    ].filter(Boolean).map(f => f.toLowerCase());
+                    
+                    return searchFields.some(field => field.includes(searchFilter));
+                });
             }
 
             if (actionFilter === 'job_deleted') {
@@ -6108,9 +6144,7 @@
             // Setup drag and drop
             setupTeamTableDragDrop();
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeManageTeamModal();
-            };
+            setupModalClose(overlay, closeManageTeamModal);
         }
 
         function setupTeamTableDragDrop() {
@@ -6350,9 +6384,7 @@
 
             setupRolesTableDragDrop();
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeManageRolesModal();
-            };
+            setupModalClose(overlay, closeManageRolesModal);
         }
 
         function closeManageRolesModal() {
@@ -6540,9 +6572,7 @@
 
             setupWorkstreamsTableDragDrop();
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeManageWorkstreamsModal();
-            };
+            setupModalClose(overlay, closeManageWorkstreamsModal);
         }
 
         function closeManageWorkstreamsModal() {
@@ -6795,9 +6825,7 @@
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeCopyPrevWeekModal();
-            };
+            setupModalClose(overlay, closeCopyPrevWeekModal);
         }
 
         function toggleWorkstreamTechs(workstream) {
@@ -6942,7 +6970,7 @@
         }
 
         // Analytics Dashboard
-        function showStatsModal() {
+        async function showStatsModal() {
             const overlay = document.createElement('div');
             overlay.id = 'statsOverlay';
             overlay.style.cssText = `
@@ -6970,6 +6998,36 @@
 
             // Calculate stats
             const stats = calculateStats();
+            
+            // Fetch canceled jobs from audit log for this week
+            const weekStart = new Date(currentWeekStart);
+            const weekEnd = new Date(currentWeekStart);
+            weekEnd.setDate(weekEnd.getDate() + 6);
+            
+            let canceledStats = { total: 0, byClient: {}, byWorkstream: {} };
+            
+            try {
+                const { data: canceledJobs } = await supabaseClient
+                    .from('audit_log')
+                    .select('*')
+                    .eq('was_canceled', true)
+                    .gte('date', toLocalDateString(weekStart))
+                    .lte('date', toLocalDateString(weekEnd));
+                
+                if (canceledJobs) {
+                    canceledStats.total = canceledJobs.length;
+                    canceledJobs.forEach(job => {
+                        const client = job.job_details?.client || 'Unknown';
+                        const tech = TECHNICIANS.find(t => t.id === job.technician_id);
+                        const workstream = tech?.workstream || 'Unknown';
+                        
+                        canceledStats.byClient[client] = (canceledStats.byClient[client] || 0) + 1;
+                        canceledStats.byWorkstream[workstream] = (canceledStats.byWorkstream[workstream] || 0) + 1;
+                    });
+                }
+            } catch (err) {
+                console.error('Error fetching canceled jobs:', err);
+            }
 
             modal.innerHTML = `
                 <div style="padding: 1.5rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
@@ -6982,7 +7040,7 @@
                 
                 <div style="padding: 1.5rem;">
                     <!-- Summary Cards -->
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
                         <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem; text-align: center;">
                             <div style="font-size: 2rem; font-weight: 700; color: var(--brand-primary);">${stats.totalJobs}</div>
                             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Total Jobs</div>
@@ -6998,6 +7056,11 @@
                         <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem; text-align: center;">
                             <div style="font-size: 2rem; font-weight: 700; color: #ef4444;">${stats.inactiveJobs}</div>
                             <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Inactive</div>
+                        </div>
+                        <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem; text-align: center;">
+                            <div style="font-size: 2rem; font-weight: 700; color: #f97316;">${canceledStats.total}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem;">Canceled</div>
+                        </div>
                         </div>
                         <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem; text-align: center;">
                             <div style="font-size: 2rem; font-weight: 700; color: #6366f1;">${stats.nightJobs}</div>
@@ -7072,15 +7135,27 @@
                         <h3 style="margin: 0 0 1rem 0; font-size: 0.875rem; color: var(--text-primary);">Jobs by Day</h3>
                         ${renderDailyChart(stats.byDay)}
                     </div>
+
+                    ${canceledStats.total > 0 ? `
+                    <!-- Canceled Jobs Breakdown -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem;">
+                        <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem;">
+                            <h3 style="margin: 0 0 1rem 0; font-size: 0.875rem; color: var(--text-primary);">⚠️ Canceled by Client</h3>
+                            ${renderCanceledChart(canceledStats.byClient)}
+                        </div>
+                        <div style="background: var(--bg-tertiary); border-radius: 0.75rem; padding: 1rem;">
+                            <h3 style="margin: 0 0 1rem 0; font-size: 0.875rem; color: var(--text-primary);">⚠️ Canceled by Workstream</h3>
+                            ${renderCanceledChart(canceledStats.byWorkstream)}
+                        </div>
+                    </div>
+                    ` : ''}
                 </div>
             `;
 
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeStatsModal();
-            };
+            setupModalClose(overlay, closeStatsModal);
         }
 
         function closeStatsModal() {
@@ -7305,6 +7380,27 @@
             `).join('');
         }
 
+        function renderCanceledChart(data) {
+            const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+            const max = Math.max(...entries.map(e => e[1]), 1);
+            
+            if (entries.length === 0) {
+                return '<div style="color: var(--text-muted); font-size: 0.8125rem;">No canceled jobs</div>';
+            }
+
+            return entries.map(([name, count]) => `
+                <div style="margin-bottom: 0.75rem;">
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 0.25rem;">
+                        <span style="font-size: 0.75rem; color: var(--text-secondary);">${name}</span>
+                        <span style="font-size: 0.75rem; font-weight: 600; color: #f97316;">${count}</span>
+                    </div>
+                    <div style="height: 8px; background: var(--bg-secondary); border-radius: 4px; overflow: hidden;">
+                        <div style="height: 100%; width: ${(count / max) * 100}%; background: #f97316; border-radius: 4px;"></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
         function renderTechnicianWorkload(data) {
             const entries = Object.entries(data).sort((a, b) => b[1].jobs - a[1].jobs);
             const max = Math.max(...entries.map(e => e[1].jobs), 1);
@@ -7516,9 +7612,7 @@
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
 
-            overlay.onclick = (e) => {
-                if (e.target === overlay) closeMoveOrDuplicatePopup();
-            };
+            setupModalClose(overlay, closeMoveOrDuplicatePopup);
         }
 
         function closeMoveOrDuplicatePopup() {
