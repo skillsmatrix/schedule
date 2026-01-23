@@ -1389,6 +1389,13 @@
                     <polyline points="10 9 9 9 8 9"/>
                 </svg>
             </button>
+            <button class="btn-icon" id="attentionBtn" onclick="showAttentionModal()" title="Jobs Needing Attention" style="display: none;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" y1="9" x2="12" y2="13"/>
+                    <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+            </button>
             <button class="btn-icon" id="statsBtn" onclick="showStatsModal()" title="Analytics Dashboard">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="18" y1="20" x2="18" y2="10"/>
@@ -1724,7 +1731,8 @@
                                     partner: entry.partner,
                                     isNight: entry.is_night || false,
                                     jobStatus: entry.job_status || 'live',
-                                    notes: entry.notes || ''
+                                    notes: entry.notes || '',
+                                    projectManager: entry.project_manager || ''
                                 });
                             }
                         }
@@ -1825,6 +1833,7 @@
             const manageRolesBtn = document.getElementById('manageRolesBtn');
             const manageWorkstreamsBtn = document.getElementById('manageWorkstreamsBtn');
             const auditLogBtn = document.getElementById('auditLogBtn');
+            const attentionBtn = document.getElementById('attentionBtn');
             
             if (currentUser) {
                 authBtn.innerHTML = `✓ ${currentUser.email.split('@')[0]} ▾`;
@@ -1840,6 +1849,7 @@
                 if (manageRolesBtn) manageRolesBtn.style.display = 'flex';
                 if (manageWorkstreamsBtn) manageWorkstreamsBtn.style.display = 'flex';
                 if (auditLogBtn) auditLogBtn.style.display = 'flex';
+                if (attentionBtn) attentionBtn.style.display = 'flex';
             } else {
                 authBtn.innerHTML = '🔐 Sign In';
                 authBtn.onclick = showLoginModal;
@@ -1853,6 +1863,7 @@
                 if (manageRolesBtn) manageRolesBtn.style.display = 'none';
                 if (manageWorkstreamsBtn) manageWorkstreamsBtn.style.display = 'none';
                 if (auditLogBtn) auditLogBtn.style.display = 'none';
+                if (attentionBtn) attentionBtn.style.display = 'none';
                 // Remove any existing user menu
                 const existingMenu = document.getElementById('userMenu');
                 if (existingMenu) existingMenu.remove();
@@ -2823,6 +2834,40 @@
                             </div>
                         </div>
                         <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Project Manager (optional)</label>
+                            <div style="position: relative;">
+                                <input type="text" id="entryProjectManager" value="${existingData?.jobs?.[0]?.projectManager || ''}" autocomplete="off" style="
+                                    width: 100%;
+                                    padding: 0.625rem 0.75rem;
+                                    border: 1px solid var(--border-color);
+                                    border-radius: 0.5rem;
+                                    font-size: 0.875rem;
+                                    font-family: inherit;
+                                    background: var(--bg-secondary);
+                                    color: var(--text-primary);
+                                    box-sizing: border-box;
+                                " placeholder="Start typing a name..." oninput="filterPMSuggestions(this.value)" onfocus="showPMSuggestions()" onblur="setTimeout(() => hidePMSuggestions(), 200)">
+                                <div id="pmSuggestions" style="
+                                    display: none;
+                                    position: absolute;
+                                    top: 100%;
+                                    left: 0;
+                                    right: 0;
+                                    background: var(--bg-secondary);
+                                    border: 1px solid var(--border-color);
+                                    border-radius: 0.5rem;
+                                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                                    max-height: 200px;
+                                    overflow-y: auto;
+                                    z-index: 10;
+                                    margin-top: 0.25rem;
+                                "></div>
+                            </div>
+                            <div id="pmWarning" style="display: none; margin-top: 0.375rem; padding: 0.5rem; background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b; border-radius: 0.375rem;">
+                                <span style="font-size: 0.75rem; color: #f59e0b;">⚠️ This person is not in the team list. Email may not be delivered correctly.</span>
+                            </div>
+                        </div>
+                        <div style="margin-bottom: 1rem;">
                             <label style="display: block; font-size: 0.75rem; font-weight: 500; color: var(--text-secondary); margin-bottom: 0.375rem;">Notes (optional)</label>
                             <textarea id="entryNotes" style="
                                 width: 100%;
@@ -3043,6 +3088,90 @@
             }
         }
 
+        // Project Manager autocomplete functions
+        function showPMSuggestions() {
+            const input = document.getElementById('entryProjectManager');
+            filterPMSuggestions(input.value);
+        }
+
+        function hidePMSuggestions() {
+            const suggestions = document.getElementById('pmSuggestions');
+            if (suggestions) {
+                suggestions.style.display = 'none';
+            }
+        }
+
+        function filterPMSuggestions(query) {
+            const suggestions = document.getElementById('pmSuggestions');
+            const warning = document.getElementById('pmWarning');
+            if (!suggestions) return;
+
+            const teamNames = TECHNICIANS.map(t => t.name);
+            const filtered = query.trim() 
+                ? teamNames.filter(name => name.toLowerCase().includes(query.toLowerCase()))
+                : teamNames;
+
+            if (filtered.length === 0 && query.trim()) {
+                suggestions.innerHTML = `
+                    <div style="padding: 0.75rem; color: var(--text-muted); font-size: 0.8125rem;">
+                        No matching team members
+                    </div>
+                `;
+                suggestions.style.display = 'block';
+                // Show warning if they've typed something not in the list
+                if (warning) warning.style.display = 'block';
+            } else {
+                suggestions.innerHTML = filtered.slice(0, 10).map(name => `
+                    <div onclick="selectPM('${name.replace(/'/g, "\\'")}')" style="
+                        padding: 0.625rem 0.75rem;
+                        cursor: pointer;
+                        font-size: 0.875rem;
+                        color: var(--text-primary);
+                        border-bottom: 1px solid var(--border-color);
+                        transition: background 0.1s;
+                    " onmouseover="this.style.background='var(--bg-tertiary)'" onmouseout="this.style.background='transparent'">
+                        ${name}
+                    </div>
+                `).join('');
+                suggestions.style.display = filtered.length > 0 ? 'block' : 'none';
+                // Hide warning if empty or valid selection
+                if (warning) warning.style.display = 'none';
+            }
+        }
+
+        function selectPM(name) {
+            const input = document.getElementById('entryProjectManager');
+            const suggestions = document.getElementById('pmSuggestions');
+            const warning = document.getElementById('pmWarning');
+            
+            if (input) input.value = name;
+            if (suggestions) suggestions.style.display = 'none';
+            if (warning) warning.style.display = 'none';
+        }
+
+        function validatePM() {
+            const input = document.getElementById('entryProjectManager');
+            const warning = document.getElementById('pmWarning');
+            if (!input || !warning) return true;
+
+            const value = input.value.trim();
+            if (!value) return true; // Empty is OK (optional field)
+
+            const teamNames = TECHNICIANS.map(t => t.name.toLowerCase());
+            const isValid = teamNames.includes(value.toLowerCase());
+            
+            warning.style.display = isValid ? 'none' : 'block';
+            return true; // Always allow save, just show warning
+        }
+
+        function getPMEmail(name) {
+            // Convert "Jon Croft" to "Jon.Croft@mgroupltd.com"
+            if (!name || !name.trim()) return null;
+            const parts = name.trim().split(/\s+/);
+            if (parts.length < 2) return `${parts[0]}@mgroupltd.com`;
+            return `${parts[0]}.${parts.slice(1).join('.')}@mgroupltd.com`;
+        }
+
         function switchEntryTab(tab) {
             const jobFields = document.getElementById('jobFields');
             const statusFields = document.getElementById('statusFields');
@@ -3160,6 +3289,10 @@
                 const isNight = document.getElementById('entryIsNight').checked;
                 const jobStatus = document.querySelector('input[name="jobStatus"]:checked')?.value || 'live';
                 const notes = document.getElementById('entryNotes').value;
+                const projectManager = document.getElementById('entryProjectManager').value.trim();
+
+                // Validate PM (shows warning but doesn't block)
+                validatePM();
 
                 if (!qNumber && !location && !task) {
                     closeEntryModal();
@@ -3183,7 +3316,8 @@
                     partner: partnerName || null,
                     is_night: isNight,
                     job_status: jobStatus,
-                    notes: notes || null
+                    notes: notes || null,
+                    project_manager: projectManager || null
                 };
 
                 // Create partner entry if partner selected
@@ -3201,7 +3335,8 @@
                             partner: tech.name, // The original tech is the partner
                             is_night: isNight,
                             job_status: jobStatus,
-                            notes: notes || null
+                            notes: notes || null,
+                            project_manager: projectManager || null
                         };
                     }
                 }
@@ -6002,6 +6137,164 @@
             const overlay = document.getElementById('globalAuditOverlay');
             if (overlay) overlay.remove();
             globalAuditData = [];
+        }
+
+        // ==================== ATTENTION NEEDED MODAL ====================
+        
+        async function showAttentionModal() {
+            const overlay = document.createElement('div');
+            overlay.id = 'attentionOverlay';
+            overlay.style.cssText = `
+                position: fixed;
+                inset: 0;
+                background: rgba(15, 23, 42, 0.6);
+                backdrop-filter: blur(4px);
+                z-index: 200;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 1rem;
+            `;
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                background: var(--bg-secondary);
+                border-radius: 1rem;
+                width: 100%;
+                max-width: 800px;
+                max-height: 85vh;
+                display: flex;
+                flex-direction: column;
+                box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+            `;
+
+            modal.innerHTML = `
+                <div style="padding: 1.5rem; border-bottom: 1px solid var(--border-color);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <h2 style="margin: 0; font-size: 1.25rem; color: var(--text-primary);">⚠️ Jobs Needing Attention</h2>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8125rem; color: var(--text-muted);">Pending & Inactive jobs within 4 weeks</p>
+                        </div>
+                        <button onclick="closeAttentionModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted); padding: 0.5rem;">&times;</button>
+                    </div>
+                </div>
+                <div id="attentionContent" style="padding: 1.5rem; overflow-y: auto; flex: 1;">
+                    <div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                        <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">⏳</div>
+                        <div>Loading jobs...</div>
+                    </div>
+                </div>
+            `;
+
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            setupModalClose(overlay, closeAttentionModal);
+
+            // Load attention-needed jobs
+            await loadAttentionJobs();
+        }
+
+        async function loadAttentionJobs() {
+            const content = document.getElementById('attentionContent');
+            
+            try {
+                // Get date 4 weeks from now
+                const today = new Date();
+                const fourWeeksAhead = new Date(today);
+                fourWeeksAhead.setDate(fourWeeksAhead.getDate() + 28);
+
+                const { data: jobs, error } = await supabaseClient
+                    .from('schedule_entries')
+                    .select('*')
+                    .in('job_status', ['pending', 'inactive'])
+                    .gte('date', toLocalDateString(today))
+                    .lte('date', toLocalDateString(fourWeeksAhead))
+                    .order('date', { ascending: true });
+
+                if (error) {
+                    content.innerHTML = `<div style="color: #ef4444; padding: 1rem;">Error loading jobs: ${error.message}</div>`;
+                    return;
+                }
+
+                if (!jobs || jobs.length === 0) {
+                    content.innerHTML = `
+                        <div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                            <div style="font-size: 2rem; margin-bottom: 0.5rem;">✅</div>
+                            <div style="font-size: 1rem; font-weight: 600;">All clear!</div>
+                            <div style="font-size: 0.875rem;">No pending or inactive jobs within the next 4 weeks.</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Group by status
+                const pending = jobs.filter(j => j.job_status === 'pending');
+                const inactive = jobs.filter(j => j.job_status === 'inactive');
+
+                content.innerHTML = `
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b; border-radius: 0.5rem; padding: 1rem; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: #f59e0b;">${pending.length}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Pending Jobs</div>
+                        </div>
+                        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; border-radius: 0.5rem; padding: 1rem; text-align: center;">
+                            <div style="font-size: 1.5rem; font-weight: 700; color: #ef4444;">${inactive.length}</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted);">Inactive Jobs</div>
+                        </div>
+                    </div>
+                    <div style="max-height: 400px; overflow-y: auto;">
+                        ${jobs.map(job => {
+                            const tech = TECHNICIANS.find(t => t.id === job.technician_id);
+                            const jobDate = new Date(job.date);
+                            const daysUntil = Math.ceil((jobDate - today) / (1000 * 60 * 60 * 24));
+                            const statusColor = job.job_status === 'pending' ? '#f59e0b' : '#ef4444';
+                            const pmEmail = job.project_manager ? getPMEmail(job.project_manager) : null;
+                            
+                            return `
+                                <div style="padding: 1rem; background: var(--bg-tertiary); border-radius: 0.5rem; margin-bottom: 0.75rem; border-left: 3px solid ${statusColor};">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+                                        <div>
+                                            <span style="font-weight: 600; color: var(--text-primary);">${job.q_number || 'No Q#'}</span>
+                                            <span style="margin-left: 0.5rem; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.625rem; font-weight: 600; text-transform: uppercase; background: ${statusColor}20; color: ${statusColor};">${job.job_status}</span>
+                                        </div>
+                                        <span style="font-size: 0.75rem; color: ${daysUntil <= 7 ? '#ef4444' : 'var(--text-muted)'}; font-weight: ${daysUntil <= 7 ? '600' : '400'};">
+                                            ${daysUntil === 0 ? 'Today' : daysUntil === 1 ? 'Tomorrow' : `${daysUntil} days`}
+                                        </span>
+                                    </div>
+                                    <div style="font-size: 0.8125rem; color: var(--text-secondary); margin-bottom: 0.25rem;">
+                                        📅 ${jobDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                        ${tech ? ` · 👤 ${tech.name}` : ''}
+                                    </div>
+                                    <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                        ${job.client ? `🏢 ${job.client}` : ''} 
+                                        ${job.location ? ` · 📍 ${job.location}` : ''}
+                                    </div>
+                                    ${job.project_manager ? `
+                                        <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.375rem; padding-top: 0.375rem; border-top: 1px solid var(--border-color);">
+                                            <span style="color: var(--brand-primary);">PM:</span> ${job.project_manager}
+                                            <span style="color: var(--text-muted); font-size: 0.6875rem;">(${pmEmail})</span>
+                                        </div>
+                                    ` : `
+                                        <div style="font-size: 0.75rem; color: #f59e0b; margin-top: 0.375rem; padding-top: 0.375rem; border-top: 1px solid var(--border-color);">
+                                            ⚠️ No Project Manager assigned
+                                        </div>
+                                    `}
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+
+            } catch (err) {
+                console.error('Error loading attention jobs:', err);
+                content.innerHTML = `<div style="color: #ef4444; padding: 1rem;">Error loading jobs</div>`;
+            }
+        }
+
+        function closeAttentionModal() {
+            const overlay = document.getElementById('attentionOverlay');
+            if (overlay) overlay.remove();
         }
 
         // ==================== MANAGE TEAM MODAL ====================
