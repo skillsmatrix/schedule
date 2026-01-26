@@ -3717,7 +3717,7 @@
             const dateStr = toLocalDateString(date);
             
             try {
-                // Log to audit table first
+                // Log to audit table for main tech
                 await supabaseClient
                     .from('audit_log')
                     .insert([{
@@ -3750,55 +3750,57 @@
                 
                 if (error) throw error;
                 
-                // If job had a partner, delete their linked entry too
+                // Track cells to refresh
+                const cellsToRefresh = [{ techId: techId, dateStr: dateStr }];
+                
+                // If job had partners, delete their linked entries too
                 if (job.partner) {
-                    const partnerTech = TECHNICIANS.find(t => t.name === job.partner);
-                    if (partnerTech) {
-                        // Log to audit table for partner too
-                        await supabaseClient
-                            .from('audit_log')
-                            .insert([{
-                                action: 'job_deleted',
-                                technician_id: partnerTech.id,
-                                technician_name: partnerTech.name,
-                                date: dateStr,
-                                job_details: {
-                                    q_number: job.q,
-                                    client: job.client,
-                                    location: job.location,
-                                    task: job.task,
-                                    partner: tech.name,
-                                    is_night: job.isNight,
-                                    job_status: job.jobStatus
-                                },
-                                was_canceled: wasCanceled,
-                                notes: notes + ` (deleted via ${tech.name})`,
-                                performed_by: currentUser?.email
-                            }]);
+                    const partnerNames = job.partner.split(',').map(p => p.trim());
+                    
+                    for (const partnerName of partnerNames) {
+                        const partnerTech = TECHNICIANS.find(t => t.name === partnerName);
+                        if (partnerTech) {
+                            // Log to audit table for each partner
+                            await supabaseClient
+                                .from('audit_log')
+                                .insert([{
+                                    action: 'job_deleted',
+                                    technician_id: partnerTech.id,
+                                    technician_name: partnerTech.name,
+                                    date: dateStr,
+                                    job_details: {
+                                        q_number: job.q,
+                                        client: job.client,
+                                        location: job.location,
+                                        task: job.task,
+                                        partner: tech.name,
+                                        is_night: job.isNight,
+                                        job_status: job.jobStatus
+                                    },
+                                    was_canceled: wasCanceled,
+                                    notes: notes + ` (deleted via ${tech.name})`,
+                                    performed_by: currentUser?.email
+                                }]);
 
-                        await supabaseClient
-                            .from('schedule_entries')
-                            .delete()
-                            .eq('technician_id', partnerTech.id)
-                            .eq('date', dateStr)
-                            .eq('partner', tech.name)
-                            .eq('q_number', job.q);
-                        
-                        // Update partner cell
-                        await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
-                        updateCell(partnerTech, dayIndex);
-                        
-                        // Broadcast to other users
-                        broadcastCellRefresh([
-                            { techId: techId, dateStr: dateStr },
-                            { techId: partnerTech.id, dateStr: dateStr }
-                        ]);
-                    } else {
-                        broadcastCellRefresh([{ techId: techId, dateStr: dateStr }]);
+                            // Delete partner's entry
+                            await supabaseClient
+                                .from('schedule_entries')
+                                .delete()
+                                .eq('technician_id', partnerTech.id)
+                                .eq('date', dateStr)
+                                .eq('q_number', job.q);
+                            
+                            // Update partner cell
+                            await reloadTechnicianDay(partnerTech, dayIndex, dateStr);
+                            updateCell(partnerTech, dayIndex);
+                            
+                            cellsToRefresh.push({ techId: partnerTech.id, dateStr: dateStr });
+                        }
                     }
-                } else {
-                    broadcastCellRefresh([{ techId: techId, dateStr: dateStr }]);
                 }
+                
+                // Broadcast to other users
+                broadcastCellRefresh(cellsToRefresh);
                 
                 closeDeleteJobModal();
                 
@@ -8477,6 +8479,31 @@
                     for (const partnerName of partnerNames) {
                         const partnerTech = TECHNICIANS.find(t => t.name === partnerName);
                         if (partnerTech) {
+                            // Log to audit for each partner
+                            await supabaseClient
+                                .from('audit_log')
+                                .insert([{
+                                    action: 'job_moved',
+                                    technician_id: partnerTech.id,
+                                    technician_name: partnerTech.name,
+                                    date: sourceDateStr,
+                                    job_details: {
+                                        q_number: job.q,
+                                        client: job.client,
+                                        location: job.location,
+                                        task: job.task,
+                                        partner: sourceTech?.name,
+                                        is_night: job.isNight,
+                                        job_status: job.jobStatus
+                                    },
+                                    was_canceled: false,
+                                    notes: `Moved to ${dateStr} (via ${sourceTech?.name})`,
+                                    moved_to_tech_id: partnerTech.id,
+                                    moved_to_tech_name: partnerTech.name,
+                                    moved_to_date: dateStr,
+                                    performed_by: currentUser?.email
+                                }]);
+
                             // Update partner's entry to new date
                             await supabaseClient
                                 .from('schedule_entries')
