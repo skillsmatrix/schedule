@@ -6468,7 +6468,7 @@
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <h2 style="margin: 0; font-size: 1.25rem; color: var(--text-primary);">⚠️ Jobs Needing Attention</h2>
-                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8125rem; color: var(--text-muted);">Pending & Inactive jobs within 4 weeks · <span id="lastEmailSent">Loading...</span></p>
+                            <p style="margin: 0.25rem 0 0 0; font-size: 0.8125rem; color: var(--text-muted);">Pending & Inactive jobs within 4 weeks</p>
                         </div>
                         <div style="display: flex; align-items: center; gap: 0.5rem;">
                             <button onclick="emailAllPMs()" id="emailAllBtn" style="
@@ -6504,33 +6504,8 @@
 
             setupModalClose(overlay, closeAttentionModal);
 
-            // Load last email sent date
-            loadLastEmailDate();
-
             // Load attention-needed jobs
             await loadAttentionJobs();
-        }
-
-        async function loadLastEmailDate() {
-            try {
-                const { data, error } = await supabaseClient
-                    .from('email_reminders')
-                    .select('sent_at')
-                    .order('sent_at', { ascending: false })
-                    .limit(1);
-                
-                const span = document.getElementById('lastEmailSent');
-                if (span) {
-                    if (data && data.length > 0) {
-                        const lastDate = new Date(data[0].sent_at);
-                        span.textContent = `Last email: ${lastDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}`;
-                    } else {
-                        span.textContent = 'No emails sent yet';
-                    }
-                }
-            } catch (err) {
-                console.error('Error loading last email date:', err);
-            }
         }
 
         async function loadAttentionJobs() {
@@ -6785,111 +6760,90 @@ Thank you,
             window.open(`mailto:${pmEmail}?subject=${subject}&body=${body}`, '_blank');
         }
 
-        // Email all PMs with jobs needing attention
+        // Email all PMs with jobs needing attention via Outlook
         async function emailAllPMs() {
-            // Get last email date
-            let lastEmailStr = 'Never';
+            // Gather all jobs needing attention
+            const today = new Date();
+            const fourWeeksAhead = new Date(today);
+            fourWeeksAhead.setDate(fourWeeksAhead.getDate() + 28);
+
             try {
-                const { data } = await supabaseClient
-                    .from('email_reminders')
-                    .select('sent_at')
-                    .order('sent_at', { ascending: false })
-                    .limit(1);
-                
-                if (data && data.length > 0) {
-                    lastEmailStr = new Date(data[0].sent_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+                const { data: jobs, error } = await supabaseClient
+                    .from('schedule_entries')
+                    .select('*')
+                    .in('job_status', ['pending', 'inactive'])
+                    .not('project_manager', 'is', null)
+                    .gte('date', toLocalDateString(today))
+                    .lte('date', toLocalDateString(fourWeeksAhead))
+                    .order('date', { ascending: true });
+
+                if (error) throw error;
+
+                if (!jobs || jobs.length === 0) {
+                    alert('No jobs with Project Managers to email.');
+                    return;
                 }
-            } catch (err) {
-                console.error('Error getting last email date:', err);
-            }
 
-            // Show confirmation modal
-            const overlay = document.createElement('div');
-            overlay.id = 'emailConfirmOverlay';
-            overlay.style.cssText = `
-                position: fixed;
-                inset: 0;
-                background: rgba(15, 23, 42, 0.6);
-                backdrop-filter: blur(4px);
-                z-index: 300;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            `;
+                // Deduplicate by Q# + date
+                const jobMap = new Map();
+                jobs.forEach(job => {
+                    const key = `${job.q_number || 'noq'}-${job.date}`;
+                    if (!jobMap.has(key)) {
+                        jobMap.set(key, job);
+                    }
+                });
+                const uniqueJobs = Array.from(jobMap.values());
 
-            overlay.innerHTML = `
-                <div style="background: var(--bg-secondary); border-radius: 1rem; padding: 2rem; max-width: 450px; width: 90%; box-shadow: 0 20px 40px rgba(0,0,0,0.3);">
-                    <h3 style="margin: 0 0 1rem 0; font-size: 1.125rem; color: var(--text-primary);">📧 Send Email Reminders?</h3>
-                    <p style="margin: 0 0 1rem 0; font-size: 0.875rem; color: var(--text-secondary);">
-                        This will send automated email reminders to all Project Managers with pending/inactive jobs.
-                    </p>
-                    <div style="background: var(--bg-tertiary); padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem;">
-                        <div style="font-size: 0.75rem; color: var(--text-muted);">Last email sent</div>
-                        <div style="font-size: 0.875rem; font-weight: 600; color: var(--text-primary);">${lastEmailStr}</div>
-                    </div>
-                    <div style="display: flex; gap: 0.75rem; justify-content: flex-end;">
-                        <button onclick="document.getElementById('emailConfirmOverlay').remove()" style="
-                            padding: 0.625rem 1.25rem;
-                            border: 1px solid var(--border-color);
-                            background: var(--bg-secondary);
-                            color: var(--text-primary);
-                            border-radius: 0.5rem;
-                            font-size: 0.875rem;
-                            cursor: pointer;
-                            font-family: inherit;
-                        ">Cancel</button>
-                        <button onclick="executeEmailAll()" id="confirmEmailBtn" style="
-                            padding: 0.625rem 1.25rem;
-                            border: none;
-                            background: var(--brand-gradient);
-                            color: white;
-                            border-radius: 0.5rem;
-                            font-size: 0.875rem;
-                            font-weight: 600;
-                            cursor: pointer;
-                            font-family: inherit;
-                        ">Send Emails</button>
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(overlay);
-        }
-
-        async function executeEmailAll() {
-            const btn = document.getElementById('confirmEmailBtn');
-            btn.disabled = true;
-            btn.textContent = 'Sending...';
-
-            try {
-                // Call the Supabase Edge Function
-                const response = await fetch('https://tcjaegtublrlkyxveloh.supabase.co/functions/v1/send-job-reminders', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                    },
-                    body: JSON.stringify({ force: true })
+                // Group by PM
+                const jobsByPM = {};
+                uniqueJobs.forEach(job => {
+                    const pm = job.project_manager;
+                    if (!jobsByPM[pm]) {
+                        jobsByPM[pm] = [];
+                    }
+                    jobsByPM[pm].push(job);
                 });
 
-                const result = await response.json();
+                const pmList = Object.keys(jobsByPM);
+                const pmEmails = pmList.map(pm => getPMEmail(pm));
 
-                document.getElementById('emailConfirmOverlay').remove();
+                // Build email body
+                let bodyLines = [
+                    'Hi all,',
+                    '',
+                    'The following jobs are currently Pending or Inactive and require attention:',
+                    ''
+                ];
 
-                if (response.ok) {
-                    const successCount = result.results?.filter(r => r.status === 'sent').length || 0;
-                    showUpdateToast(`✅ Sent ${successCount} email${successCount !== 1 ? 's' : ''} successfully`);
-                    
-                    // Refresh last email date
-                    loadLastEmailDate();
-                } else {
-                    throw new Error(result.error || 'Failed to send emails');
-                }
+                pmList.forEach(pm => {
+                    bodyLines.push(`--- ${pm} ---`);
+                    jobsByPM[pm].forEach(job => {
+                        const jobDate = new Date(job.date);
+                        const daysUntil = Math.ceil((jobDate - today) / (1000 * 60 * 60 * 24));
+                        const dateStr = jobDate.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+                        const urgentFlag = daysUntil <= 7 ? ' [URGENT]' : '';
+                        bodyLines.push(`• ${job.q_number || 'No Q#'} - ${job.client || 'Unknown'} - ${job.location || 'Unknown'} - ${dateStr} (${daysUntil} days)${urgentFlag}`);
+                    });
+                    bodyLines.push('');
+                });
+
+                bodyLines.push('Please confirm if these jobs are going ahead so we can update the status to Live, or let us know if they need to be cancelled.');
+                bodyLines.push('');
+                bodyLines.push('Thank you');
+
+                const subject = encodeURIComponent(`Action Required: ${uniqueJobs.length} Jobs Needing Attention`);
+                const body = encodeURIComponent(bodyLines.join('\n'));
+                const to = pmEmails.join(';');
+
+                // Open Outlook
+                window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+
+                // Log that we opened the email
+                showUpdateToast(`📧 Opened email to ${pmList.length} PM${pmList.length > 1 ? 's' : ''}`);
 
             } catch (err) {
-                console.error('Error sending emails:', err);
-                document.getElementById('emailConfirmOverlay').remove();
-                alert('Error sending emails: ' + err.message + '\n\nNote: Make sure the Supabase Edge Function is deployed and Resend API key is configured.');
+                console.error('Error preparing email:', err);
+                alert('Error preparing email: ' + err.message);
             }
         }
 
